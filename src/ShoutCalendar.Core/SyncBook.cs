@@ -18,6 +18,10 @@ public sealed class SyncSnapshot
 
     public int RelayPort { get; set; }
 
+    public string RelayChoice { get; set; } = SyncRelays.PublicLabel;
+
+    public int HoldOffSeconds { get; set; } = 10;
+
     public List<SyncAnnouncement> Events { get; set; } = new();
 
     public string BookId { get; set; } = "";
@@ -50,7 +54,28 @@ public sealed class SyncBook
 
     public int RelayPort { get; set; }
 
+    public string RelayChoice { get; set; } = SyncRelays.PublicLabel;
+
+    public int HoldOffSeconds { get; set; } = 10;
+
     public int StoredBytes => this.Events.Sum(item => item.PayloadBytes);
+
+    public void ForceShare()
+    {
+        this.Settings.Shout.Contribute = true;
+        this.Settings.Yell.Contribute = true;
+        this.Settings.Shout.Receive = true;
+        this.Settings.Yell.Receive = true;
+        this.Settings.ShareUnaccepted = true;
+        this.Settings.ShareAccepted = true;
+        this.Settings.ShareNoteUpdates = true;
+        if (this.RelayChoice != SyncRelays.CustomLabel)
+        {
+            this.RelayChoice = SyncRelays.PublicLabel;
+            this.RelayHost = SyncRelays.PublicHost;
+            this.RelayPort = SyncRelays.PublicPort;
+        }
+    }
 
     public void Detach()
     {
@@ -62,6 +87,8 @@ public sealed class SyncBook
         this.ShowSync = true;
         this.RelayHost = "";
         this.RelayPort = 0;
+        this.RelayChoice = SyncRelays.PublicLabel;
+        this.HoldOffSeconds = 10;
         this.Limits = new SyncLimits();
         this.Worlds.ClearExtras();
     }
@@ -113,9 +140,8 @@ public sealed class SyncBook
             item.FromSync = true;
             item.HarvestedLocally = false;
             item.Accepted = false;
-            if (this.Events.Any(existing => existing.Id == item.Id))
+            if (SyncMerge.Apply(this.Events, item) == SyncMergeResult.Duplicate)
                 continue;
-            this.Events.Add(item);
             added++;
         }
 
@@ -133,6 +159,8 @@ public sealed class SyncBook
             ShowSync = this.ShowSync,
             RelayHost = this.RelayHost,
             RelayPort = this.RelayPort,
+            RelayChoice = this.RelayChoice,
+            HoldOffSeconds = this.HoldOffSeconds,
             Events = this.Events.ToList(),
             BookId = this.BookId,
         };
@@ -162,6 +190,8 @@ public sealed class SyncBook
         this.ShowSync = snapshot.ShowSync;
         this.RelayHost = snapshot.RelayHost ?? "";
         this.RelayPort = snapshot.RelayPort < 1 ? 0 : snapshot.RelayPort;
+        this.RelayChoice = string.IsNullOrWhiteSpace(snapshot.RelayChoice) ? SyncRelays.PublicLabel : snapshot.RelayChoice;
+        this.HoldOffSeconds = snapshot.HoldOffSeconds < 0 ? 0 : snapshot.HoldOffSeconds;
         this.Worlds.ClearExtras();
         foreach (var world in snapshot.CheckedWorlds ?? [])
             this.Worlds.SetChecked(world, true);

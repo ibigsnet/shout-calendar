@@ -14,6 +14,8 @@ public sealed class RelayLog
 
     public IReadOnlyList<SyncAnnouncement> Events => this.events;
 
+    public SyncMergeResult Merge(SyncAnnouncement item) => SyncMerge.Apply(this.events, item);
+
     public void Restore(IEnumerable<SyncAnnouncement> rows)
     {
         this.events.AddRange(rows);
@@ -36,6 +38,9 @@ public sealed class RelayLog
         item.FromSync = true;
         item.HarvestedLocally = false;
         item.Accepted = false;
+        item.ContentKey = SyncMerge.Key(item);
+        if (this.events.Any(row => SyncMerge.Key(row) == item.ContentKey && item.Revision <= row.Revision))
+            return RelayProtocol.Stored;
         var weight = Math.Max(payload.Length, item.PayloadBytes);
         var admitted = SyncBudget.Admit(
             [item],
@@ -48,11 +53,7 @@ public sealed class RelayLog
         if (admitted.Count == 0)
             return RelayProtocol.Dropped;
 
-        var index = this.events.FindIndex(row => row.Id == item.Id && row.World.Equals(item.World, StringComparison.OrdinalIgnoreCase));
-        if (index >= 0)
-            this.events[index] = item;
-        else
-            this.events.Add(item);
+        SyncMerge.Apply(this.events, item);
         return RelayProtocol.Stored;
     }
 

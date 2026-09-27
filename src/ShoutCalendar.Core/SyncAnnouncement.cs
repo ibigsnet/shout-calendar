@@ -28,6 +28,10 @@ public sealed class SyncAnnouncement
 
     public string Time { get; set; } = "";
 
+    public int Revision { get; set; }
+
+    public string ContentKey { get; set; } = "";
+
     public bool IsSyncPending => this.FromSync && !this.HarvestedLocally && !this.Accepted;
 
     public string ColorToken => this.IsSyncPending ? "sync-pending" : this.Accepted ? "accepted" : "pending";
@@ -55,6 +59,7 @@ public sealed class SyncAnnouncement
             NoteUpdated = entry.NoteUpdated,
             Date = entry.Date?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "",
             Time = entry.Time?.ToString("HH:mm", CultureInfo.InvariantCulture) ?? "",
+            Revision = entry.NoteUpdated ? 2 : 1,
         };
     }
 }
@@ -167,6 +172,10 @@ public static class RelayCodec
 
         public string Time { get; set; } = "";
 
+        public int Revision { get; set; }
+
+        public string ContentKey { get; set; } = "";
+
         public static Wire From(SyncAnnouncement item) => new()
         {
             Id = item.Id,
@@ -180,6 +189,8 @@ public static class RelayCodec
             Category = item.Category,
             Date = item.Date,
             Time = item.Time,
+            Revision = item.Revision,
+            ContentKey = item.ContentKey,
         };
 
         public SyncAnnouncement ToAnnouncement() => new()
@@ -195,6 +206,8 @@ public static class RelayCodec
             Category = this.Category,
             Date = this.Date,
             Time = this.Time,
+            Revision = this.Revision,
+            ContentKey = this.ContentKey,
         };
     }
 }

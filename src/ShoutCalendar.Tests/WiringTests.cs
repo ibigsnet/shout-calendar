@@ -46,7 +46,7 @@ public class WiringTests
         Assert.Contains("PlayChatSoundEffect", plugin, StringComparison.Ordinal);
         Assert.Contains("!entry.Accepted", window, StringComparison.Ordinal);
         Assert.Contains("AddRectFilled", window, StringComparison.Ordinal);
-        var pendingStart = window.IndexOf("private void DrawSyncPending()", StringComparison.Ordinal);
+        var pendingStart = window.IndexOf("private void DrawSharedRow(", StringComparison.Ordinal);
         var pendingEnd = window.IndexOf("private void DrawSyncDetail(", pendingStart, StringComparison.Ordinal);
         Assert.True(pendingStart >= 0 && pendingEnd > pendingStart);
         var pendingBody = window[pendingStart..pendingEnd];

@@ -93,7 +93,13 @@ public sealed class CalendarWindow : Window
                 ImGui.EndTabItem();
             }
 
-            if (SyncGate.Panel is SyncBook)
+            ImGui.EndTabBar();
+        }
+
+        if (SyncGate.Panel is SyncBook)
+        {
+            ImGui.Spacing();
+            if (ImGui.BeginTabBar("sync-tabs"))
             {
                 if (ImGui.BeginTabItem("Sync settings"))
                 {
@@ -101,14 +107,8 @@ public sealed class CalendarWindow : Window
                     ImGui.EndTabItem();
                 }
 
-                if (ImGui.BeginTabItem("Sync pending"))
-                {
-                    this.DrawSyncPending();
-                    ImGui.EndTabItem();
-                }
+                ImGui.EndTabBar();
             }
-
-            ImGui.EndTabBar();
         }
 
         ImGui.EndChild();
@@ -177,6 +177,64 @@ public sealed class CalendarWindow : Window
             if (ImGui.Button($"Delete##{entry.Id}"))
                 this.RemoveEntry(entry.Id);
         }
+
+        this.DrawSharedPending();
+    }
+
+    private void DrawSharedPending()
+    {
+        if (SyncGate.Panel is not SyncBook book)
+            return;
+
+        var rows = book.Events
+            .Where(item => item.IsSyncPending && item.World.Equals(book.Worlds.Selected, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        ImGui.Separator();
+        ImGui.TextWrapped($"Shared on {book.Worlds.Selected}");
+        if (rows.Count == 0)
+        {
+            ImGui.TextDisabled("No shared invites are waiting.");
+            return;
+        }
+
+        foreach (var item in rows)
+            this.DrawSharedRow(book, item);
+    }
+
+    private void DrawSharedRow(SyncBook book, SyncAnnouncement item)
+    {
+        ImGui.Separator();
+        var line = $"{item.World}  {item.Text}";
+        var width = MathF.Max(1f, ImGui.GetContentRegionAvail().X);
+        var size = ImGui.CalcTextSize(line, false, width);
+        var pos = ImGui.GetCursorScreenPos();
+        ImGui.GetWindowDrawList().AddRectFilled(
+            pos,
+            pos + new Vector2(width, size.Y),
+            ImGui.ColorConvertFloat4ToU32(this.session.SyncPendingColor));
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 1f, 1f, 1f));
+        ImGui.TextWrapped(line);
+        ImGui.PopStyleColor();
+        if (!string.IsNullOrWhiteSpace(item.Category))
+            ImGui.TextUnformatted(item.Category);
+        if (ImGui.BeginCombo($"Category##sync-cat-{item.Id}", string.IsNullOrWhiteSpace(item.Category) ? "Category" : item.Category))
+        {
+            foreach (var category in EventCategories.BuiltIn)
+            {
+                if (ImGui.Selectable($"{category}##{item.Id}-{category}", category == item.Category))
+                    book.SetCategory(item.Id, category);
+            }
+
+            ImGui.EndCombo();
+        }
+
+        ImGui.SetNextItemWidth(180f);
+        ImGui.InputText($"Category label##sync-label-{item.Id}", ref this.categoryDraft, 80);
+        ImGui.SameLine();
+        if (ImGui.SmallButton($"Set##sync-set-{item.Id}"))
+            book.SetCategory(item.Id, this.categoryDraft);
+        if (ImGui.SmallButton($"Accept##sync-accept-{item.Id}") && book.AcceptRemote(item.Id))
+            this.categoryDraft = "";
     }
 
     private void DrawResets()
@@ -1138,21 +1196,60 @@ public sealed class CalendarWindow : Window
         if (book is null)
             return;
 
-        ImGui.TextWrapped("Only Shout and Yell can be shared. Other chats stay on this computer.");
+        ImGui.TextWrapped("Public Shout and Yell this calendar keeps are shared. Other chats stay on this computer. Accept adds a shared invite to your calendar.");
         var showSync = book.ShowSync;
         if (ImGui.Checkbox("Show sync events", ref showSync))
             book.ShowSync = showSync;
 
-        this.DrawChannelModes("Shout", book.Settings.Shout);
-        this.DrawChannelModes("Yell", book.Settings.Yell);
-        this.DrawShareToggle("Share unaccepted", book.Settings.ShareUnaccepted, value => book.Settings.ShareUnaccepted = value);
-        this.DrawShareToggle("Share accepted", book.Settings.ShareAccepted, value => book.Settings.ShareAccepted = value);
-        this.DrawShareToggle("Share note updates", book.Settings.ShareNoteUpdates, value => book.Settings.ShareNoteUpdates = value);
+        var relay = book.RelayChoice == SyncRelays.CustomLabel ? SyncRelays.CustomLabel : SyncRelays.PublicLabel;
+        if (ImGui.BeginCombo("Relay", relay))
+        {
+            if (ImGui.Selectable(SyncRelays.PublicLabel, relay == SyncRelays.PublicLabel))
+            {
+                book.RelayChoice = SyncRelays.PublicLabel;
+                book.RelayHost = SyncRelays.PublicHost;
+                book.RelayPort = SyncRelays.PublicPort;
+            }
+
+            if (ImGui.Selectable(SyncRelays.CustomLabel, relay == SyncRelays.CustomLabel))
+            {
+                book.RelayChoice = SyncRelays.CustomLabel;
+                if (SyncRelays.IsPublic(book.RelayHost, book.RelayPort))
+                {
+                    book.RelayHost = "";
+                    book.RelayPort = 0;
+                }
+            }
+
+            ImGui.EndCombo();
+        }
+
+        if (book.RelayChoice == SyncRelays.CustomLabel)
+        {
+            var host = book.RelayHost;
+            if (ImGui.InputText("Relay address", ref host, 200))
+                book.RelayHost = host.Trim();
+            var port = book.RelayPort;
+            if (ImGui.InputInt("Relay port", ref port))
+                book.RelayPort = port < 1 ? 0 : port;
+        }
 
         ImGui.Separator();
-        ImGui.TextUnformatted("Servers");
+        ImGui.TextUnformatted("Limits");
+        var hold = book.HoldOffSeconds;
+        book.HoldOffSeconds = this.Limit("Hold off (seconds)", hold);
+        book.Limits.MaxConnections = this.Limit("Connections", book.Limits.MaxConnections);
+        book.Limits.BytesPerSecond = this.MegabytesPerSecond(book.Limits.BytesPerSecond);
+        book.Limits.MaxStoredBytes = this.Megabytes(book.Limits.MaxStoredBytes, "Stored size (MB)");
+        book.Limits.MaxItemsPerTick = this.Limit("Items per tick", book.Limits.MaxItemsPerTick);
+        book.Limits.MaxMemoryBytes = this.Megabytes(book.Limits.MaxMemoryBytes, "Memory (MB)");
+
+        ImGui.SetNextItemOpen(true, ImGuiCond.FirstUseEver);
+        if (!ImGui.CollapsingHeader("Servers"))
+            return;
         ImGui.TextDisabled($"{book.Worlds.Home} is this world.");
-        ImGui.BeginChild("sync-worlds", new Vector2(0, 160), true);
+        var height = MathF.Max(120f, ImGui.GetContentRegionAvail().Y - 4f);
+        ImGui.BeginChild("sync-worlds", new Vector2(0, height), true);
         foreach (var world in PlayableWorlds.All)
         {
             var home = world == book.Worlds.Home;
@@ -1166,46 +1263,6 @@ public sealed class CalendarWindow : Window
         }
 
         ImGui.EndChild();
-        ImGui.Separator();
-        ImGui.TextUnformatted("Limits");
-        book.Limits.MaxConnections = this.Limit("Connections", book.Limits.MaxConnections);
-        book.Limits.BytesPerSecond = this.Limit("Speed (bytes/sec)", book.Limits.BytesPerSecond);
-        book.Limits.MaxStoredBytes = this.Limit("Stored size (bytes)", book.Limits.MaxStoredBytes);
-        book.Limits.MaxItemsPerTick = this.Limit("Items per tick", book.Limits.MaxItemsPerTick);
-        book.Limits.MaxMemoryBytes = this.Limit("Memory (bytes)", book.Limits.MaxMemoryBytes);
-        var host = book.RelayHost;
-        if (ImGui.InputText("Relay address", ref host, 200))
-            book.RelayHost = host.Trim();
-        var port = book.RelayPort;
-        if (ImGui.InputInt("Relay port", ref port))
-            book.RelayPort = port < 1 ? 0 : port;
-    }
-
-    private void DrawChannelModes(string name, ChannelModes modes)
-    {
-        ImGui.Separator();
-        ImGui.TextUnformatted(name);
-        var listen = modes.Listen;
-        var add = modes.Add;
-        var receive = modes.Receive;
-        var contribute = modes.Contribute;
-        if (ImGui.Checkbox($"Listen##{name}-listen", ref listen))
-            modes.Listen = listen;
-        ImGui.SameLine();
-        if (ImGui.Checkbox($"Add locally##{name}-add", ref add))
-            modes.Add = add;
-        if (ImGui.Checkbox($"Receive##{name}-receive", ref receive))
-            modes.Receive = receive;
-        ImGui.SameLine();
-        if (ImGui.Checkbox($"Contribute##{name}-contribute", ref contribute))
-            modes.Contribute = contribute;
-    }
-
-    private void DrawShareToggle(string label, bool value, Action<bool> set)
-    {
-        if (!ImGui.Checkbox(label, ref value))
-            return;
-        set(value);
     }
 
     private int Limit(string label, int value)
@@ -1213,59 +1270,29 @@ public sealed class CalendarWindow : Window
         ImGui.SetNextItemWidth(140f);
         if (!ImGui.InputInt($"{label}##sync-cap-{label}", ref value))
             return value;
-        return value < 1 ? 1 : value;
+        return value < 0 ? 0 : value;
     }
 
-    private void DrawSyncPending()
+    private int Megabytes(int bytes, string label)
     {
-        var book = SyncGate.Panel;
-        if (book is null)
-            return;
+        var megabytes = Math.Max(1, (bytes + 999_999) / 1_000_000);
+        ImGui.SetNextItemWidth(140f);
+        if (!ImGui.InputInt($"{label}##sync-mb-{label}", ref megabytes))
+            return bytes;
+        if (megabytes < 1)
+            megabytes = 1;
+        return megabytes * 1_000_000;
+    }
 
-        var rows = book.Events
-            .Where(item => item.IsSyncPending && item.World.Equals(book.Worlds.Selected, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        if (rows.Count == 0)
-        {
-            ImGui.TextWrapped("No shared shouts are waiting for this server.");
-            return;
-        }
-
-        foreach (var item in rows)
-        {
-            ImGui.Separator();
-            var line = $"{item.World}  {item.Text}";
-            var width = MathF.Max(1f, ImGui.GetContentRegionAvail().X);
-            var size = ImGui.CalcTextSize(line, false, width);
-            var pos = ImGui.GetCursorScreenPos();
-            ImGui.GetWindowDrawList().AddRectFilled(
-                pos,
-                pos + new Vector2(width, size.Y),
-                ImGui.ColorConvertFloat4ToU32(this.session.SyncPendingColor));
-            ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 1f, 1f, 1f));
-            ImGui.TextWrapped(line);
-            ImGui.PopStyleColor();
-            if (!string.IsNullOrWhiteSpace(item.Category))
-                ImGui.TextUnformatted(item.Category);
-            if (ImGui.BeginCombo($"Category##sync-cat-{item.Id}", string.IsNullOrWhiteSpace(item.Category) ? "Category" : item.Category))
-            {
-                foreach (var category in EventCategories.BuiltIn)
-                {
-                    if (ImGui.Selectable($"{category}##{item.Id}-{category}", category == item.Category))
-                        book.SetCategory(item.Id, category);
-                }
-
-                ImGui.EndCombo();
-            }
-
-            ImGui.SetNextItemWidth(180f);
-            ImGui.InputText($"Category label##sync-label-{item.Id}", ref this.categoryDraft, 80);
-            ImGui.SameLine();
-            if (ImGui.SmallButton($"Set##sync-set-{item.Id}"))
-                book.SetCategory(item.Id, this.categoryDraft);
-            if (ImGui.SmallButton($"Accept##sync-accept-{item.Id}") && book.AcceptRemote(item.Id))
-                this.categoryDraft = "";
-        }
+    private int MegabytesPerSecond(int bytesPerSecond)
+    {
+        var megabytes = Math.Max(1, (bytesPerSecond + 999_999) / 1_000_000);
+        ImGui.SetNextItemWidth(140f);
+        if (!ImGui.InputInt("Speed (MB/s)##sync-mbps", ref megabytes))
+            return bytesPerSecond;
+        if (megabytes < 1)
+            megabytes = 1;
+        return megabytes * 1_000_000;
     }
 
     private void DrawSyncDetail(DayLine line)
