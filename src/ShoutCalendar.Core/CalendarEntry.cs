@@ -16,4 +16,6 @@ public sealed record CalendarEntry(
     bool Accepted,
     string Id,
     DateTimeOffset DetectedAt,
-    EventRepeat? Repeat = null);
+    EventRepeat? Repeat = null,
+    int Channel = 0,
+    bool NoteUpdated = false);

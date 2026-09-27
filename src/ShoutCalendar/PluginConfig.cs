@@ -54,6 +54,12 @@ public sealed class PluginConfig : IPluginConfiguration
 
     public int AlarmMinutesBefore { get; set; } = 15;
 
+    public bool? ShowLocal { get; set; }
+
+    public bool? ShowResets { get; set; }
+
+    public Vector4 SyncPendingColor { get; set; } = new(0.45f, 0.28f, 0.72f, 0.95f);
+
     /// <summary>Null means <see cref="GameSchedule.DefaultIds"/>.</summary>
     public List<string>? EnabledResets { get; set; }
 
@@ -100,6 +106,10 @@ public sealed class StoredEvent
 
     public string? Repeat { get; set; }
 
+    public int Channel { get; set; }
+
+    public bool NoteUpdated { get; set; }
+
     public static StoredEvent From(CalendarEntry entry)
     {
         return new StoredEvent
@@ -118,6 +128,8 @@ public sealed class StoredEvent
                 ? ""
                 : entry.DetectedAt.ToString("o", CultureInfo.InvariantCulture),
             Repeat = entry.Repeat?.Store(),
+            Channel = entry.Channel,
+            NoteUpdated = entry.NoteUpdated,
         };
     }
 
@@ -160,7 +172,9 @@ public sealed class StoredEvent
             DateTimeOffset.TryParse(stored.DetectedAt, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var detectedAt)
                 ? detectedAt
                 : default,
-            EventRepeat.Parse(stored.Repeat));
+            EventRepeat.Parse(stored.Repeat),
+            stored.Channel,
+            stored.NoteUpdated);
         return true;
     }
 }

@@ -1,6 +1,6 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <Version>0.1.17</Version>
+    <Version>0.1.18</Version>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -18,7 +18,7 @@ Save accepts a pending invite. Click a block to edit it under the month, or clic
 The Resets tab adds Jumbo Cactpot, the weekly reset, and limited events such as A Nocturne for Heroes. Resets that share a clock share one line. Alarms play a chat sound from se.1 to se.16, or a WAV you choose. Colors are yours to set.
 
 /shoutcalendar opens the calendar. /shoutcalendar test checks a line on your machine and does not send chat.</Description>
-    <Changelog>The installer name is Shout Calendar. The window title is FFXIV Shout Calendar.</Changelog>
+    <Changelog>The month header has a month list and a year list. The year list opens on the current year. Shout Calendar Sync can attach.</Changelog>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\ShoutCalendar.Core\ShoutCalendar.Core.csproj" />

@@ -9,6 +9,8 @@ using Dalamud.Game.Text;
 using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
 using Dalamud.Plugin;
+using Dalamud.Plugin.Ipc;
+using Dalamud.Plugin.Ipc.Exceptions;
 using Dalamud.Interface.ImGuiFileDialog;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.UI;
@@ -27,6 +29,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IClientState ClientState { get; private set; } = null!;
     [PluginService] internal static IFramework Framework { get; private set; } = null!;
     [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
+    [PluginService] internal static IPlayerState PlayerState { get; private set; } = null!;
 
     private readonly PluginConfig config;
     private readonly CalendarSession session;
@@ -37,6 +40,13 @@ public sealed class Plugin : IDalamudPlugin
     private readonly Dictionary<string, uint> questIds = new(StringComparer.OrdinalIgnoreCase);
     private bool questsScanned;
     private DateTime? alarmMinute;
+    private SyncBook? syncBook;
+    private ICallGateProvider<byte[], string, bool>? syncAttach;
+    private ICallGateProvider<byte[], bool>? syncDetach;
+    private ICallGateProvider<byte[], string>? syncPull;
+    private ICallGateProvider<byte[], int, string, string>? syncIngest;
+    private ICallGateProvider<byte[], string>? syncRead;
+    private ICallGateProvider<byte[], string, bool>? syncApply;
 
     public Plugin()
     {
@@ -74,6 +84,9 @@ public sealed class Plugin : IDalamudPlugin
         this.session.CactusColor = Shown(this.config.CactusColor, new Vector4(0.55f, 0.78f, 0.22f, 0.95f));
         this.session.EventColor = Shown(this.config.EventColor, new Vector4(0f, 0f, 1f, 0.64f));
         this.session.AlarmMinutesBefore = this.config.AlarmMinutesBefore < 0 ? 0 : this.config.AlarmMinutesBefore;
+        this.session.ShowLocal = this.config.ShowLocal ?? true;
+        this.session.ShowResets = this.config.ShowResets ?? true;
+        this.session.SyncPendingColor = Shown(this.config.SyncPendingColor, new Vector4(0.45f, 0.28f, 0.72f, 0.95f));
         this.session.UseResets(this.config.EnabledResets);
         this.session.CactpotRegion = GameSchedule.NormalizeRegion(this.config.CactpotRegion);
         this.session.Log.Restore(this.config.ToEntries());
@@ -94,11 +107,13 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenConfigUi += this.OpenMain;
         ChatGui.ChatMessage += this.OnChat;
         Framework.Update += this.OnFramework;
+        this.RegisterSyncHook();
         this.ImportLogs();
     }
 
     public void Dispose()
     {
+        this.UnregisterSyncHook();
         Framework.Update -= this.OnFramework;
         ChatGui.ChatMessage -= this.OnChat;
         PluginInterface.UiBuilder.Draw -= this.windowSystem.Draw;
@@ -149,7 +164,7 @@ public sealed class Plugin : IDalamudPlugin
             this.session.AlarmAccepted,
             this.session.AlarmUnaccepted,
             this.session.AlarmMinutesBefore);
-        if (this.session.AlarmResets)
+        if (this.session.AlarmResets && this.session.ShowResets)
         {
             var resets = GameSchedule.Due(
                 now,
@@ -333,6 +348,9 @@ public sealed class Plugin : IDalamudPlugin
         this.config.CactusColor = this.session.CactusColor;
         this.config.EventColor = this.session.EventColor;
         this.config.AlarmMinutesBefore = this.session.AlarmMinutesBefore < 0 ? 0 : this.session.AlarmMinutesBefore;
+        this.config.ShowLocal = this.session.ShowLocal;
+        this.config.ShowResets = this.session.ShowResets;
+        this.config.SyncPendingColor = this.session.SyncPendingColor;
         this.config.EnabledResets = this.session.Resets.Order().ToList();
         this.config.CactpotRegion = GameSchedule.NormalizeRegion(this.session.CactpotRegion);
         PluginInterface.SavePluginConfig(this.config);
@@ -420,5 +438,110 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         return added;
+    }
+
+    private void RegisterSyncHook()
+    {
+        try
+        {
+            this.syncAttach = PluginInterface.GetIpcProvider<byte[], string, bool>("ShoutCalendar.Sync.Attach");
+            this.syncAttach.RegisterFunc(this.OnSyncAttach);
+            this.syncDetach = PluginInterface.GetIpcProvider<byte[], bool>("ShoutCalendar.Sync.Detach");
+            this.syncDetach.RegisterFunc(this.OnSyncDetach);
+            this.syncPull = PluginInterface.GetIpcProvider<byte[], string>("ShoutCalendar.Sync.Pull");
+            this.syncPull.RegisterFunc(this.OnSyncPull);
+            this.syncIngest = PluginInterface.GetIpcProvider<byte[], int, string, string>("ShoutCalendar.Sync.Ingest");
+            this.syncIngest.RegisterFunc(this.OnSyncIngest);
+            this.syncRead = PluginInterface.GetIpcProvider<byte[], string>("ShoutCalendar.Sync.Read");
+            this.syncRead.RegisterFunc(this.OnSyncRead);
+            this.syncApply = PluginInterface.GetIpcProvider<byte[], string, bool>("ShoutCalendar.Sync.Apply");
+            this.syncApply.RegisterFunc(this.OnSyncApply);
+        }
+        catch (Exception exception)
+        {
+            Log.Warning(exception, "Shout Calendar Sync hook was not registered.");
+        }
+    }
+
+    private void UnregisterSyncHook()
+    {
+        this.syncAttach?.UnregisterFunc();
+        this.syncDetach?.UnregisterFunc();
+        this.syncPull?.UnregisterFunc();
+        this.syncIngest?.UnregisterFunc();
+        this.syncRead?.UnregisterFunc();
+        this.syncApply?.UnregisterFunc();
+        this.syncBook?.Detach();
+        SyncGate.Detach();
+    }
+
+    private bool OnSyncAttach(byte[] signature, string world)
+    {
+        if (!SyncGate.AllowWrite(signature))
+            return false;
+        var home = this.DetectedWorld(world);
+        if (!PlayableWorlds.TryCanonical(home, out var canonical))
+            return false;
+        this.syncBook ??= new SyncBook(canonical);
+        return SyncGate.TryAttach(signature, this.syncBook);
+    }
+
+    private bool OnSyncDetach(byte[] signature)
+    {
+        if (!SyncGate.AllowWrite(signature))
+            return false;
+        this.syncBook?.Detach();
+        SyncGate.Detach();
+        return true;
+    }
+
+    private string OnSyncPull(byte[] signature)
+    {
+        if (!SyncGate.AllowRead(signature) || this.syncBook is null)
+            return "";
+        var rows = SyncExport.FromLocal(this.syncBook, this.session.Log.Entries);
+        return System.Text.Encoding.UTF8.GetString(RelayCodec.EncodeList(rows));
+    }
+
+    private string OnSyncIngest(byte[] signature, int openConnections, string json)
+    {
+        if (!SyncGate.AllowWrite(signature) || this.syncBook is null)
+            return RelayProtocol.Denied;
+        var rows = RelayCodec.DecodeList(System.Text.Encoding.UTF8.GetBytes(json ?? ""));
+        var added = this.syncBook.Ingest(signature, rows, openConnections);
+        return added < 0 ? RelayProtocol.Denied : RelayProtocol.Stored;
+    }
+
+    private string OnSyncRead(byte[] signature)
+    {
+        if (!SyncGate.AllowRead(signature) || this.syncBook is null)
+            return "";
+        return this.syncBook.ToJson();
+    }
+
+    private bool OnSyncApply(byte[] signature, string json)
+    {
+        if (!SyncGate.AllowWrite(signature) || this.syncBook is null)
+            return false;
+        return this.syncBook.ApplyJson(json);
+    }
+
+    private string DetectedWorld(string fallback)
+    {
+        try
+        {
+            if (PlayerState.IsLoaded && PlayerState.CurrentWorld.IsValid)
+            {
+                var name = PlayerState.CurrentWorld.Value.Name.ExtractText();
+                if (PlayableWorlds.TryCanonical(name, out var world))
+                    return world;
+            }
+        }
+        catch (Exception)
+        {
+            // Character data is not available at the title screen.
+        }
+
+        return fallback ?? "";
     }
 }

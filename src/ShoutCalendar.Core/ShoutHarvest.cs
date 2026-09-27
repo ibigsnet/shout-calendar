@@ -125,7 +125,8 @@ public static class ShoutHarvest
             false,
             "",
             default,
-            repeat);
+            repeat,
+            channel);
     }
 
     public static IReadOnlyList<CalendarEntry> HarvestLog(ReadOnlySpan<byte> log, PlaceCatalog? places = null)

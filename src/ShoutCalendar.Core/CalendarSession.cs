@@ -59,6 +59,12 @@ public sealed class CalendarSession
 
     public int AlarmMinutesBefore { get; set; } = 15;
 
+    public bool ShowLocal { get; set; } = true;
+
+    public bool ShowResets { get; set; } = true;
+
+    public Vector4 SyncPendingColor { get; set; } = new(0.45f, 0.28f, 0.72f, 0.95f);
+
     public HashSet<string> Resets { get; } = new(GameSchedule.DefaultIds);
 
     public string CactpotRegion { get; set; } = GameSchedule.RegionNa;

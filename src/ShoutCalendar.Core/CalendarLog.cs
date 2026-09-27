@@ -50,6 +50,7 @@ public sealed class CalendarLog
             Place = place,
             Ward = parsed?.Ward ?? current.Ward,
             Server = parsed?.Server ?? current.Server,
+            NoteUpdated = current.NoteUpdated || !string.Equals(text, current.EventText, StringComparison.Ordinal),
         };
         return true;
     }

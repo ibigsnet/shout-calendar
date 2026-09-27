@@ -6,7 +6,7 @@
     "Description": "Shout Calendar listens to the chats you choose and keeps event invites on a month calendar until you accept them. Nothing is accepted for you, and nothing is sent to other players.\n\nIt understands clocks, dates, today, tonight, tomorrow, next Tuesday, the Tuesday after next, every Tuesday, every other week, and the 1st and last Wednesday of a month. Places include wards, plots such as W3P26, coordinates, worlds, and names from the game's own data. A ward heard in a city guesses that city's housing district.\n\nSave accepts a pending invite. Click a block to edit it under the month, or click the day number for that day's full list. Coordinates open the map with a flag. Known quest givers do the same, and quest names drop a quest link into chat.\n\nThe Resets tab adds Jumbo Cactpot, the weekly reset, and limited events such as A Nocturne for Heroes. Resets that share a clock share one line. Alarms play a chat sound from se.1 to se.16, or a WAV you choose. Colors are yours to set.\n\n/shoutcalendar opens the calendar. /shoutcalendar test checks a line on your machine and does not send chat.",
     "Changelog": "The installer name is Shout Calendar. The window title is FFXIV Shout Calendar.",
     "InternalName": "ShoutCalendar",
-    "AssemblyVersion": "0.1.17.0",
+    "AssemblyVersion": "0.1.18.0",
     "RepoUrl": "https://github.com/ibigsnet/shout-calendar",
     "ApplicableVersion": "any",
     "DalamudApiLevel": 15,
@@ -18,8 +18,31 @@
     "IsHide": false,
     "IsTestingExclusive": false,
     "DownloadCount": 0,
-    "LastUpdate": 1790505556,
-    "DownloadLinkInstall": "https://github.com/ibigsnet/shout-calendar/releases/download/v0.1.17/ShoutCalendar.zip",
-    "DownloadLinkUpdate": "https://github.com/ibigsnet/shout-calendar/releases/download/v0.1.17/ShoutCalendar.zip"
+    "LastUpdate": 1790511266,
+    "DownloadLinkInstall": "https://github.com/ibigsnet/shout-calendar/releases/download/v0.1.18/ShoutCalendar.zip",
+    "DownloadLinkUpdate": "https://github.com/ibigsnet/shout-calendar/releases/download/v0.1.18/ShoutCalendar.zip"
+  },
+  {
+    "Author": "RifleJock",
+    "Name": "Shout Calendar Sync",
+    "Punchline": "Shares public Shout and Yell invites across worlds you choose.",
+    "Description": "Shout Calendar Sync attaches to Shout Calendar and shares public Shout and Yell invites. Say, tells, party, alliance, free company, linkshells, and novice network are not shared.\n\nThe list at the top right starts on your current world. Check another world to fetch it in the background, then select it to see that world's events.\n\nSync runs on its own. You can limit connections, speed, stored size, items per tick, and memory. Removing this plugin removes shared events and leaves the invites you heard yourself.",
+    "Changelog": "First sync build. Public Shout and Yell only.",
+    "InternalName": "ShoutCalendar.Sync",
+    "AssemblyVersion": "0.1.0.0",
+    "RepoUrl": "https://github.com/ibigsnet/shout-calendar-sync",
+    "ApplicableVersion": "any",
+    "DalamudApiLevel": 15,
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "LoadPriority": 10,
+    "AcceptsFeedback": true,
+    "IsHide": false,
+    "IsTestingExclusive": false,
+    "DownloadCount": 0,
+    "LastUpdate": 1790511266,
+    "DownloadLinkInstall": "https://github.com/ibigsnet/shout-calendar-sync/releases/download/v0.1.0/ShoutCalendar.Sync.zip",
+    "DownloadLinkUpdate": "https://github.com/ibigsnet/shout-calendar-sync/releases/download/v0.1.0/ShoutCalendar.Sync.zip"
   }
 ]
