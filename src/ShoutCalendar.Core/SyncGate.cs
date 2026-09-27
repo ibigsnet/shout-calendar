@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using System.Text;
 
 namespace ShoutCalendar.Core;
@@ -47,11 +46,13 @@ public static class SyncGate
             return false;
         try
         {
-            using var ecdsa = ECDsa.Create();
-            ecdsa.ImportFromPem(PublicKeyPem);
-            return ecdsa.VerifyData(payload, signature, HashAlgorithmName.SHA256);
+            return P256.Verify(P256.PublicPoint(PublicKeyPem), payload, signature);
         }
-        catch (CryptographicException)
+        catch (FormatException)
+        {
+            return false;
+        }
+        catch (System.Security.Cryptography.CryptographicException)
         {
             return false;
         }
