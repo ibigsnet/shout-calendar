@@ -132,7 +132,10 @@ public sealed class CalendarWindow : Window
                 ImGui.TextWrapped(entry.Place);
             ImGui.TextWrapped(entry.EventText);
             if (ImGui.Button($"Edit##{entry.Id}"))
-                this.BeginEdit(entry);
+            {
+                var title = string.IsNullOrWhiteSpace(entry.Place) ? entry.EventText : entry.Place;
+                this.SelectLine(new DayLine(entry.Time, entry.Time is null ? 2 : 1, title, entry.EventText, entry, null, false));
+            }
             ImGui.SameLine();
             if (ImGui.Button($"Accept##{entry.Id}") && this.session.Log.Accept(entry.Id))
             {
