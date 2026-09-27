@@ -131,6 +131,17 @@ public sealed class SyncBook
         return true;
     }
 
+    public int DismissOpen(ClearTarget target)
+    {
+        var open = new HashSet<string>(this.Worlds.Selectable(), StringComparer.OrdinalIgnoreCase);
+        return this.DismissMatching(item => open.Contains(item.World) && target switch
+        {
+            ClearTarget.SyncAccepted => item.Accepted,
+            ClearTarget.SyncUnaccepted => item.IsSyncPending,
+            _ => false,
+        });
+    }
+
     public int DismissMatching(Func<SyncAnnouncement, bool> match)
     {
         var gone = this.Events.Where(match).ToList();
@@ -148,6 +159,42 @@ public sealed class SyncBook
         var key = string.IsNullOrEmpty(item.ContentKey) ? SyncMerge.Key(item) : item.ContentKey;
         if (!this.DismissedKeys.Contains(key))
             this.DismissedKeys.Add(key);
+    }
+
+    public bool DeclineRemote(string id)
+    {
+        var item = this.Events.FirstOrDefault(row => row.Id == id);
+        if (item is null)
+            return false;
+        item.Declined = true;
+        item.Accepted = false;
+        return true;
+    }
+
+    public void AcceptSame(CalendarEntry entry, string heardOn)
+    {
+        var world = ShareWorld.Choose(heardOn, entry.SpeakerWorld, entry.Server);
+        var text = $"{entry.EventText} {entry.Place}";
+        foreach (var item in this.Events)
+        {
+            if (!EventIdentity.SameShout(item.World, item.Text, world, text))
+                continue;
+            item.Declined = false;
+            item.Accepted = true;
+        }
+    }
+
+    public void ApplyTombstones(IEnumerable<string> keys)
+    {
+        var gone = new HashSet<string>(keys.Where(key => !string.IsNullOrWhiteSpace(key)), StringComparer.OrdinalIgnoreCase);
+        if (gone.Count == 0)
+            return;
+        this.Events.RemoveAll(item => gone.Contains(item.ContentKey) || gone.Contains(SyncMerge.Key(item)));
+        foreach (var key in gone)
+        {
+            if (!this.DismissedKeys.Contains(key))
+                this.DismissedKeys.Add(key);
+        }
     }
 
     public bool AcceptRemote(string id)
@@ -180,7 +227,9 @@ public sealed class SyncBook
         if (openConnections > this.Limits.Clamp().MaxConnections)
             return 0;
 
+        this.ApplyTombstones(incoming.Where(item => item.Id.StartsWith("gone:", StringComparison.Ordinal)).Select(item => item.ContentKey));
         var shareable = incoming
+            .Where(item => !item.Id.StartsWith("gone:", StringComparison.Ordinal))
             .Where(item => SharePolicy.ShouldReceive(item.Channel, this.Settings))
             .Where(item => PlayableWorlds.TryCanonical(item.World, out _))
             .Where(item => ShoutHarvest.IsSharedEvent(item.Text, item.Channel, DateTimeOffset.UtcNow, places))

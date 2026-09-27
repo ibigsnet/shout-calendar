@@ -22,9 +22,11 @@ public class WiringTests
         Assert.Contains("Accept", window, StringComparison.Ordinal);
         Assert.Contains("Decline", window, StringComparison.Ordinal);
         Assert.Contains("Delete", window, StringComparison.Ordinal);
-        Assert.Contains("Clear all", window, StringComparison.Ordinal);
-        Assert.Contains("Clear accepted", window, StringComparison.Ordinal);
-        Assert.Contains("Clear unaccepted", window, StringComparison.Ordinal);
+        Assert.Contains("Clear local", window, StringComparison.Ordinal);
+        Assert.Contains("Clear local accepted", window, StringComparison.Ordinal);
+        Assert.Contains("Clear local unaccepted", window, StringComparison.Ordinal);
+        Assert.Contains("Clear sync accepted", window, StringComparison.Ordinal);
+        Assert.Contains("Clear sync unaccepted", window, StringComparison.Ordinal);
         Assert.Contains("Aggressive filter (2 of date, time, place)", window, StringComparison.Ordinal);
         Assert.Contains("Alarm accepted events", window, StringComparison.Ordinal);
         Assert.Contains("Alarm unaccepted events", window, StringComparison.Ordinal);
@@ -56,7 +58,9 @@ public class WiringTests
         Assert.Contains("BeginCombo(\"##year\"", window, StringComparison.Ordinal);
         Assert.Contains("BeginCombo(\"##month\"", window, StringComparison.Ordinal);
         Assert.Contains("Update Shout Calendar Sync to use this relay.", window, StringComparison.Ordinal);
-        Assert.Contains("BeginTabItem(\"Sync settings\")", window, StringComparison.Ordinal);
+        Assert.Contains("BeginTabItem(\"Sync\")", window, StringComparison.Ordinal);
+        Assert.Contains("DismissOpen", window, StringComparison.Ordinal);
+        Assert.Contains("You currently have the calendars for the following servers open:", File.ReadAllText(Path.Combine(root, "src", "ShoutCalendar.Core", "ClearPrompt.cs")), StringComparison.Ordinal);
         Assert.DoesNotContain("sync-tabs", window, StringComparison.Ordinal);
         Assert.Contains("Informedaholic: accept every invite you see", window, StringComparison.Ordinal);
         Assert.Contains("Remember this choice##link-settings", window, StringComparison.Ordinal);

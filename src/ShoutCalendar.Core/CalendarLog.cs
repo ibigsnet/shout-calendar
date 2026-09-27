@@ -13,6 +13,22 @@ public sealed class CalendarLog
     {
         if (entry is null)
             return false;
+        var same = this.entries.FindIndex(row => EventIdentity.SameEntry(row, entry));
+        if (same >= 0)
+        {
+            var current = this.entries[same];
+            this.entries[same] = Stamp(entry with
+            {
+                Id = current.Id,
+                Accepted = current.Accepted || entry.Accepted,
+                Sender = string.IsNullOrWhiteSpace(entry.Sender) ? current.Sender : entry.Sender,
+                SpeakerWorld = string.IsNullOrWhiteSpace(entry.SpeakerWorld) ? current.SpeakerWorld : entry.SpeakerWorld,
+                Manual = current.Manual,
+                DetectedAt = current.DetectedAt == default ? entry.DetectedAt : current.DetectedAt,
+            });
+            return true;
+        }
+
         if (string.IsNullOrEmpty(entry.Id))
             entry = entry with { Id = Guid.NewGuid().ToString("N"), Accepted = false };
         this.entries.Add(Stamp(entry));

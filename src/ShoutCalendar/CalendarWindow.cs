@@ -35,6 +35,7 @@ public sealed class CalendarWindow : Window
     private string addDate = "";
     private string addTime = "";
     private string addPlace = "";
+    private string addNotice = "";
 
     public CalendarWindow(
         CalendarSession session,
@@ -102,7 +103,7 @@ public sealed class CalendarWindow : Window
                 ImGui.EndTabItem();
             }
 
-            if (SyncGate.Panel is SyncBook && ImGui.BeginTabItem("Sync settings"))
+            if (SyncGate.Panel is SyncBook && ImGui.BeginTabItem("Sync"))
             {
                 this.DrawSyncSettings();
                 ImGui.EndTabItem();
@@ -135,9 +136,9 @@ public sealed class CalendarWindow : Window
     {
         var rowRight = ImGui.GetCursorScreenPos().X + ImGui.GetContentRegionAvail().X;
         var continued = false;
-        this.DrawWrappingButton("Clear all", rowRight, ref continued, () => this.prompt.Ask(ClearTarget.All));
-        this.DrawWrappingButton("Clear accepted", rowRight, ref continued, () => this.prompt.Ask(ClearTarget.Accepted));
-        this.DrawWrappingButton("Clear unaccepted", rowRight, ref continued, () => this.prompt.Ask(ClearTarget.Unaccepted));
+        this.DrawWrappingButton("Clear local", rowRight, ref continued, () => this.prompt.Ask(ClearTarget.All));
+        this.DrawWrappingButton("Clear local accepted", rowRight, ref continued, () => this.prompt.Ask(ClearTarget.Accepted));
+        this.DrawWrappingButton("Clear local unaccepted", rowRight, ref continued, () => this.prompt.Ask(ClearTarget.Unaccepted));
         this.DrawWrappingButton("Add event", rowRight, ref continued, () => this.adding = true);
         ImGui.Separator();
         this.DrawAddEvent();
@@ -170,6 +171,8 @@ public sealed class CalendarWindow : Window
             ImGui.SameLine();
             if (ImGui.Button($"Accept##{entry.Id}") && this.session.Log.Accept(entry.Id))
             {
+                if (SyncGate.Panel is SyncBook synced)
+                    synced.AcceptSame(entry, synced.Worlds.Home);
                 if (entry.Date is DateOnly acceptedDay)
                     this.session.Show(acceptedDay);
                 this.save();
@@ -228,6 +231,9 @@ public sealed class CalendarWindow : Window
         this.DrawSyncCategory(book, item);
         if (ImGui.SmallButton($"Accept##sync-accept-{item.Id}") && book.AcceptRemote(item.Id))
             this.categoryDraft = "";
+        ImGui.SameLine();
+        if (ImGui.SmallButton($"Decline##sync-decline-{item.Id}"))
+            book.DeclineRemote(item.Id);
         ImGui.SameLine();
         if (ImGui.SmallButton($"Delete##sync-row-{item.Id}"))
             book.Dismiss(item.Id);
@@ -418,16 +424,19 @@ public sealed class CalendarWindow : Window
         if (this.pendingLink is not null)
             ImGui.OpenPopup("Open this link?##shout-link");
 
+        ImGui.SetNextWindowSize(new Vector2(440f, 200f), ImGuiCond.Always);
         var open = this.pendingLink is not null;
-        if (!ImGui.BeginPopupModal("Open this link?##shout-link", ref open, ImGuiWindowFlags.AlwaysAutoResize))
+        if (!ImGui.BeginPopupModal("Open this link?##shout-link", ref open))
         {
             if (!open)
                 this.pendingLink = null;
             return;
         }
 
+        ImGui.PushTextWrapPos(ImGui.GetCursorPos().X + 400f);
         ImGui.TextWrapped("Open this link in your browser?");
         ImGui.TextWrapped(this.pendingLink ?? "");
+        ImGui.PopTextWrapPos();
         ImGui.Checkbox("Remember this choice##link-popup", ref this.linkRememberDraft);
         if (ImGui.Button("Open##link-open"))
         {
@@ -1054,10 +1063,23 @@ public sealed class CalendarWindow : Window
         var lines = new List<DayLine>();
         foreach (var entry in this.session.Log.Entries)
         {
-            if (!this.IncludeLocal(entry) || !EventRepeat.FallsOn(entry, date))
+            if (!this.IncludeLocal(entry))
                 continue;
+            var labeled = ZoneClock.Labeled(entry.EventText);
+            var shown = ZoneClock.Shown(entry, TimeZoneInfo.Local);
+            if (labeled && entry.Repeat is null)
+            {
+                if (shown.Date != date)
+                    continue;
+            }
+            else if (!EventRepeat.FallsOn(entry, date))
+            {
+                continue;
+            }
+
             var title = string.IsNullOrWhiteSpace(entry.Place) ? entry.EventText : entry.Place;
-            lines.Add(new DayLine(entry.Time, entry.Time is null ? 2 : 1, title, entry.EventText, entry, null, false));
+            var clock = labeled ? shown.Time : entry.Time;
+            lines.Add(new DayLine(clock, clock is null ? 2 : 1, title, entry.EventText, entry, null, false));
         }
 
         this.AddSyncLines(date, lines);
@@ -1208,7 +1230,8 @@ public sealed class CalendarWindow : Window
 
     private static string WhenText(CalendarEntry entry)
     {
-        if (entry.Time is not TimeOnly time)
+        var shown = ZoneClock.Shown(entry, TimeZoneInfo.Local);
+        if (shown.Time is not TimeOnly time)
             return "date only";
         return entry.End is TimeOnly end ? $"{time:HH:mm}-{end:HH:mm}" : time.ToString("HH:mm");
     }
@@ -1218,30 +1241,27 @@ public sealed class CalendarWindow : Window
         if (this.prompt.IsOpen)
             ImGui.OpenPopup("Clear shouts?");
 
+        ImGui.SetNextWindowSize(new Vector2(440f, 240f), ImGuiCond.Always);
         var open = this.prompt.IsOpen;
-        if (!ImGui.BeginPopupModal("Clear shouts?", ref open, ImGuiWindowFlags.AlwaysAutoResize))
+        if (!ImGui.BeginPopupModal("Clear shouts?", ref open))
         {
             if (!open && this.prompt.IsOpen)
                 this.prompt.AnswerNo();
             return;
         }
 
-        var question = this.prompt.Question;
-        if (SyncGate.Panel is not null)
-            question += " Shared invites on this computer are included.";
+        IReadOnlyList<string> servers = SyncGate.Panel is SyncBook openBook ? openBook.Worlds.Selectable() : [];
+        var home = SyncGate.Panel is SyncBook homeBook ? homeBook.Worlds.Home : "";
+        var question = this.prompt.Question(servers, home);
+        ImGui.PushTextWrapPos(ImGui.GetCursorPos().X + 400f);
         ImGui.TextWrapped(question);
+        ImGui.PopTextWrapPos();
         if (ImGui.Button("Yes"))
         {
+            var target = this.prompt.Target;
             this.prompt.AnswerYes(this.session.Log);
-            if (SyncGate.Panel is SyncBook cleared)
-            {
-                if (this.prompt.Target == ClearTarget.Accepted)
-                    cleared.DismissMatching(item => item.Accepted);
-                else if (this.prompt.Target == ClearTarget.Unaccepted)
-                    cleared.DismissMatching(item => item.IsSyncPending);
-                else
-                    cleared.DismissMatching(_ => true);
-            }
+            if (SyncGate.Panel is SyncBook cleared && target is ClearTarget.SyncAccepted or ClearTarget.SyncUnaccepted)
+                cleared.DismissOpen(target);
 
             this.save();
             ImGui.CloseCurrentPopup();
@@ -1326,7 +1346,11 @@ public sealed class CalendarWindow : Window
         if (book is null)
             return;
 
-        ImGui.TextWrapped("Public Shout and Yell this calendar keeps are shared. Other chats stay on this computer. Accept adds a shared invite to your calendar. A shout that names a world is shared on that world. Shout and Yell are heard only on the world you are standing on.");
+        ImGui.TextWrapped("Public Shout and Yell this calendar keeps are shared. Other chats stay on this computer. Accept adds a shared invite to your calendar. A shout that names a world is shared on that world. Otherwise it is shared on the speaker's home world. Shout and Yell are heard only on the world you are standing on.");
+        var syncRight = ImGui.GetCursorScreenPos().X + ImGui.GetContentRegionAvail().X;
+        var syncContinued = false;
+        this.DrawWrappingButton("Clear sync accepted", syncRight, ref syncContinued, () => this.prompt.Ask(ClearTarget.SyncAccepted));
+        this.DrawWrappingButton("Clear sync unaccepted", syncRight, ref syncContinued, () => this.prompt.Ask(ClearTarget.SyncUnaccepted));
         var autoAccept = book.Informedaholic;
         if (ImGui.Checkbox("Informedaholic: accept every shared invite##sync-auto", ref autoAccept))
         {
@@ -1403,16 +1427,28 @@ public sealed class CalendarWindow : Window
         ImGui.TextDisabled($"{book.Worlds.Home} is this world.");
         var height = MathF.Max(120f, ImGui.GetContentRegionAvail().Y - 4f);
         ImGui.BeginChild("sync-worlds", new Vector2(0, height), true);
-        foreach (var world in PlayableWorlds.All)
+        foreach (var group in DataCenters.All)
         {
-            var home = world == book.Worlds.Home;
-            var on = book.Worlds.IsChecked(world);
-            if (home)
-                ImGui.BeginDisabled();
-            if (ImGui.Checkbox($"{world}##sync-world-{world}", ref on) && !home)
-                book.Worlds.SetChecked(world, on);
-            if (home)
-                ImGui.EndDisabled();
+            var centerOn = book.Worlds.DataCenterChecked(group.Name);
+            var open = ImGui.TreeNodeEx($"##dc-node-{group.Name}", ImGuiTreeNodeFlags.SpanAvailWidth);
+            ImGui.SameLine();
+            if (ImGui.Checkbox($"{group.Name}##dc-{group.Name}", ref centerOn))
+                book.Worlds.SetDataCenter(group.Name, centerOn);
+            if (!open)
+                continue;
+            foreach (var world in group.Worlds)
+            {
+                var home = world == book.Worlds.Home;
+                var on = book.Worlds.IsChecked(world);
+                if (home)
+                    ImGui.BeginDisabled();
+                if (ImGui.Checkbox($"{world}##sync-world-{world}", ref on) && !home)
+                    book.Worlds.SetChecked(world, on);
+                if (home)
+                    ImGui.EndDisabled();
+            }
+
+            ImGui.TreePop();
         }
 
         ImGui.EndChild();
@@ -1493,6 +1529,8 @@ public sealed class CalendarWindow : Window
         ImGui.InputText("Date##add-date", ref this.addDate, 16);
         ImGui.InputText("Time##add-time", ref this.addTime, 8);
         ImGui.InputText("Location##add-place", ref this.addPlace, 200);
+        if (this.addNotice.Length > 0)
+            ImGui.TextWrapped(this.addNotice);
         if (ImGui.SmallButton("Save##add-save") && this.SaveAdded())
             this.adding = false;
         ImGui.SameLine();
@@ -1510,7 +1548,8 @@ public sealed class CalendarWindow : Window
             this.session.Places,
             this.session.Channels,
             this.session.HousingHint,
-            aggressive: false);
+            aggressive: false,
+            zone: this.session.Zone);
         if (parsed is null)
             return;
         if (parsed.Date is DateOnly day)
@@ -1521,30 +1560,88 @@ public sealed class CalendarWindow : Window
             this.addPlace = parsed.Place;
     }
 
-    private bool SaveAdded()
+    private void FillBlankDetails()
     {
-        var note = this.addNote.Trim();
-        var place = this.addPlace.Trim();
-        if (note.Length == 0 && place.Length == 0 && this.addDate.Trim().Length == 0 && this.addTime.Trim().Length == 0)
-            return false;
         var parsed = ShoutHarvest.TryHarvest(
-            string.Join(' ', new[] { note, place, this.addDate, this.addTime }.Where(part => part.Trim().Length > 0)),
+            this.addNote,
             ShoutHarvest.ShoutChannel,
             DateTimeOffset.Now,
             this.session.Places,
             this.session.Channels,
             this.session.HousingHint,
-            aggressive: false);
-        DateOnly? date = parsed?.Date;
-        if (DateOnly.TryParseExact(this.addDate.Trim(), "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var typedDate))
+            aggressive: false,
+            zone: this.session.Zone);
+        if (parsed is null)
+            return;
+        if (this.addDate.Trim().Length == 0 && parsed.Date is DateOnly day)
+            this.addDate = day.ToString("yyyy-MM-dd");
+        if (this.addTime.Trim().Length == 0 && parsed.Time is TimeOnly time)
+            this.addTime = time.ToString("HH:mm");
+        if (this.addPlace.Trim().Length == 0 && !string.IsNullOrWhiteSpace(parsed.Place))
+            this.addPlace = parsed.Place;
+    }
+
+    private bool SaveAdded()
+    {
+        this.addNotice = "";
+        var note = this.addNote.Trim();
+        var place = this.addPlace.Trim();
+        var dateText = this.addDate.Trim();
+        var timeText = this.addTime.Trim();
+        if (note.Length == 0 && place.Length == 0 && dateText.Length == 0 && timeText.Length == 0)
+        {
+            this.addNotice = "Paste the details, or type a date and a time.";
+            return false;
+        }
+
+        if (dateText.Length == 0 && timeText.Length == 0)
+            this.FillBlankDetails();
+        dateText = this.addDate.Trim();
+        timeText = this.addTime.Trim();
+        place = this.addPlace.Trim();
+        if (dateText.Length == 0 && timeText.Length == 0)
+        {
+            this.addNotice = "No date or time was found. Type them, or put them in the details.";
+            return false;
+        }
+
+        DateOnly? date = null;
+        if (dateText.Length > 0)
+        {
+            if (!DateOnly.TryParseExact(dateText, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var typedDate))
+            {
+                this.addNotice = "Date uses yyyy-MM-dd.";
+                return false;
+            }
+
             date = typedDate;
-        TimeOnly? time = parsed?.Time;
-        if (TimeOnly.TryParseExact(this.addTime.Trim(), "HH:mm", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var typedTime))
+        }
+
+        TimeOnly? time = null;
+        if (timeText.Length > 0)
+        {
+            if (!TimeOnly.TryParseExact(timeText, "HH:mm", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var typedTime))
+            {
+                this.addNotice = "Time uses HH:mm.";
+                return false;
+            }
+
             time = typedTime;
+        }
+
+        var parsed = ShoutHarvest.TryHarvest(
+            note,
+            ShoutHarvest.ShoutChannel,
+            DateTimeOffset.Now,
+            this.session.Places,
+            this.session.Channels,
+            this.session.HousingHint,
+            aggressive: false,
+            zone: this.session.Zone);
         var entry = new CalendarEntry(
             date,
             time,
-            string.IsNullOrWhiteSpace(this.addTime) ? parsed?.End : null,
+            timeText.Length == 0 ? parsed?.End : null,
             parsed?.Ward,
             parsed?.Server,
             place.Length > 0 ? place : parsed?.Place ?? "",
@@ -1565,6 +1662,7 @@ public sealed class CalendarWindow : Window
         this.addDate = "";
         this.addTime = "";
         this.addPlace = "";
+        this.addNotice = "";
         this.save();
         return true;
     }
@@ -1598,18 +1696,9 @@ public sealed class CalendarWindow : Window
     {
         if (!this.session.ShowLocal)
             return false;
-        var book = SyncGate.Panel;
-        if (book is null)
+        if (SyncGate.Panel is not SyncBook book)
             return true;
-        if (string.IsNullOrWhiteSpace(entry.Server))
-            return book.Worlds.Selected.Equals(book.Worlds.Home, StringComparison.OrdinalIgnoreCase);
-        foreach (var part in entry.Server.Split(','))
-        {
-            if (part.Trim().Equals(book.Worlds.Selected, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-
-        return false;
+        return book.Worlds.ShowsLocal(entry);
     }
 
     private void AddSyncLines(DateOnly date, List<DayLine> lines)

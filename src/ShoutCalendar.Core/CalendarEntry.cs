@@ -19,4 +19,5 @@ public sealed record CalendarEntry(
     EventRepeat? Repeat = null,
     int Channel = 0,
     bool NoteUpdated = false,
-    bool Manual = false);
+    bool Manual = false,
+    string SpeakerWorld = "");

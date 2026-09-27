@@ -7,12 +7,15 @@ namespace ShoutCalendar.Core;
 public sealed class RelayLog
 {
     private readonly List<SyncAnnouncement> events = new();
+    private readonly HashSet<string> tombstones = new(StringComparer.OrdinalIgnoreCase);
 
     public SyncLimits Limits { get; set; } = new();
 
     public int StoredBytes => this.events.Sum(item => item.PayloadBytes);
 
     public IReadOnlyList<SyncAnnouncement> Events => this.events;
+
+    public IReadOnlyCollection<string> Tombstones => this.tombstones;
 
     public SyncMergeResult Merge(SyncAnnouncement item) => SyncMerge.Apply(this.events, item);
 
@@ -39,6 +42,8 @@ public sealed class RelayLog
         item.HarvestedLocally = false;
         item.Accepted = false;
         item.ContentKey = SyncMerge.Key(item);
+        if (this.tombstones.Contains(item.ContentKey) || this.tombstones.Contains(item.Id))
+            return RelayProtocol.Stored;
         if (this.events.Any(row => SyncMerge.Key(row) == item.ContentKey && item.Revision <= row.Revision))
             return RelayProtocol.Stored;
         var weight = Math.Max(payload.Length, item.PayloadBytes);
@@ -67,7 +72,36 @@ public sealed class RelayLog
             return RelayProtocol.Refused;
         rows = this.events
             .Where(item => item.World.Equals(canonical, StringComparison.OrdinalIgnoreCase) && SharePolicy.IsShareable(item.Channel))
+            .Where(item => !this.tombstones.Contains(item.ContentKey) && !this.tombstones.Contains(item.Id))
             .ToArray();
         return RelayProtocol.Ok;
+    }
+
+    public bool Purge(string idOrKey)
+    {
+        if (string.IsNullOrWhiteSpace(idOrKey))
+            return false;
+        var item = this.events.FirstOrDefault(row =>
+            row.Id.Equals(idOrKey, StringComparison.OrdinalIgnoreCase)
+            || row.ContentKey.Equals(idOrKey, StringComparison.OrdinalIgnoreCase)
+            || SyncMerge.Key(row).Equals(idOrKey, StringComparison.OrdinalIgnoreCase));
+        var key = item is null ? idOrKey.Trim() : (string.IsNullOrEmpty(item.ContentKey) ? SyncMerge.Key(item) : item.ContentKey);
+        this.tombstones.Add(key);
+        if (item is not null)
+        {
+            this.tombstones.Add(item.Id);
+            this.events.Remove(item);
+        }
+
+        return item is not null;
+    }
+
+    public void RestoreTombstones(IEnumerable<string> keys)
+    {
+        foreach (var key in keys)
+        {
+            if (!string.IsNullOrWhiteSpace(key))
+                this.tombstones.Add(key.Trim());
+        }
     }
 }

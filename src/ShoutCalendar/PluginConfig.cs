@@ -118,6 +118,8 @@ public sealed class StoredEvent
 
     public bool Manual { get; set; }
 
+    public string SpeakerWorld { get; set; } = "";
+
     public static StoredEvent From(CalendarEntry entry)
     {
         return new StoredEvent
@@ -139,6 +141,7 @@ public sealed class StoredEvent
             Channel = entry.Channel,
             NoteUpdated = entry.NoteUpdated,
             Manual = entry.Manual,
+            SpeakerWorld = entry.SpeakerWorld,
         };
     }
 
@@ -184,7 +187,8 @@ public sealed class StoredEvent
             EventRepeat.Parse(stored.Repeat),
             stored.Channel,
             stored.NoteUpdated,
-            stored.Manual);
+            stored.Manual,
+            stored.SpeakerWorld);
         return true;
     }
 }

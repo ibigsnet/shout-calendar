@@ -46,7 +46,11 @@ public static class SyncMerge
         incoming.Revision = Math.Max(current.Revision + 1, incoming.Revision);
         if (!string.IsNullOrEmpty(current.Id))
             incoming.Id = current.Id;
-        incoming.ContentKey = current.ContentKey;
+        incoming.Accepted = current.Accepted || incoming.Accepted;
+        incoming.Declined = current.Declined;
+        if (current.Declined)
+            incoming.Accepted = false;
+        incoming.ContentKey = SyncMerge.Key(incoming);
         events[index] = incoming;
         return SyncMergeResult.Updated;
     }
@@ -56,7 +60,9 @@ public static class SyncMerge
         if (!string.IsNullOrEmpty(incoming.Id) && row.Id == incoming.Id
             && row.World.Equals(incoming.World, StringComparison.OrdinalIgnoreCase))
             return true;
-        return !string.IsNullOrEmpty(row.ContentKey) && row.ContentKey == incoming.ContentKey;
+        if (!string.IsNullOrEmpty(row.ContentKey) && row.ContentKey == incoming.ContentKey)
+            return true;
+        return EventIdentity.SameShout(row.World, row.Text, incoming.World, incoming.Text);
     }
 }
 

@@ -32,7 +32,9 @@ public sealed class SyncAnnouncement
 
     public string ContentKey { get; set; } = "";
 
-    public bool IsSyncPending => this.FromSync && !this.HarvestedLocally && !this.Accepted;
+    public bool Declined { get; set; }
+
+    public bool IsSyncPending => this.FromSync && !this.HarvestedLocally && !this.Accepted && !this.Declined;
 
     public string ColorToken => this.IsSyncPending ? "sync-pending" : this.Accepted ? "accepted" : "pending";
 
@@ -40,9 +42,7 @@ public sealed class SyncAnnouncement
 
     public static SyncAnnouncement FromLocal(CalendarEntry entry, string homeWorld)
     {
-        var world = homeWorld;
-        if (PlayableWorlds.TryNamedWorld(entry.Server, out var named))
-            world = named;
+        var world = ShareWorld.Choose(homeWorld, entry.SpeakerWorld, entry.Server);
 
         return new SyncAnnouncement
         {

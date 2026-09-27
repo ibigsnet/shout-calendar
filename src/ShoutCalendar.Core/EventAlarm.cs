@@ -23,7 +23,8 @@ public static class EventAlarm
         DateTime? previousMinute,
         bool alarmAccepted,
         bool alarmUnaccepted,
-        int minutesBefore)
+        int minutesBefore,
+        TimeZoneInfo? zone = null)
     {
         if (previousMinute is null)
             return [];
@@ -38,7 +39,7 @@ public static class EventAlarm
         var hits = new List<Hit>();
         foreach (var entry in entries)
         {
-            if (entry.Time is not TimeOnly time || string.IsNullOrEmpty(entry.Id))
+            if (!Clock(entry, zone, out var day, out var time) || string.IsNullOrEmpty(entry.Id))
                 continue;
             if (entry.Accepted)
             {
@@ -51,7 +52,7 @@ public static class EventAlarm
             }
 
             var eventMoment = minute.AddMinutes(minutesBefore);
-            if (!EventRepeat.FallsOn(entry, DateOnly.FromDateTime(eventMoment)))
+            if (!OnDay(entry, day, DateOnly.FromDateTime(eventMoment)))
                 continue;
             if (eventMoment.Hour != time.Hour || eventMoment.Minute != time.Minute)
                 continue;
@@ -62,9 +63,9 @@ public static class EventAlarm
     }
 
     /// <summary>The warning time is this minute or already past, so accepting the invite should ring now.</summary>
-    public static bool AlreadyDue(CalendarEntry entry, DateTime now, int minutesBefore)
+    public static bool AlreadyDue(CalendarEntry entry, DateTime now, int minutesBefore, TimeZoneInfo? zone = null)
     {
-        if (entry.Time is not TimeOnly time)
+        if (!Clock(entry, zone, out var faced, out var time))
             return false;
         if (minutesBefore < 0)
             minutesBefore = 0;
@@ -78,11 +79,32 @@ public static class EventAlarm
         }
         else
         {
-            day = entry.Date ?? today;
+            day = faced;
         }
 
         var start = day.ToDateTime(time);
         var grace = Math.Max(minutesBefore, 1);
         return now >= start.AddMinutes(-minutesBefore) && now <= start.AddMinutes(grace);
+    }
+
+    private static bool Clock(CalendarEntry entry, TimeZoneInfo? zone, out DateOnly day, out TimeOnly time)
+    {
+        var face = ZoneClock.Shown(entry, zone);
+        day = face.Date;
+        if (face.Time is not TimeOnly shown)
+        {
+            time = default;
+            return false;
+        }
+
+        time = shown;
+        return true;
+    }
+
+    private static bool OnDay(CalendarEntry entry, DateOnly faced, DateOnly moment)
+    {
+        if (entry.Repeat is null)
+            return faced == moment;
+        return EventRepeat.FallsOn(entry, moment);
     }
 }

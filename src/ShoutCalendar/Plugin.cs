@@ -61,7 +61,10 @@ public sealed class Plugin : IDalamudPlugin
             throw new InvalidOperationException("XivChatType.Shout does not match the documented shout channel byte.");
 
         this.config = PluginInterface.GetPluginConfig() as PluginConfig ?? new PluginConfig();
-        this.session = new CalendarSession(DateOnly.FromDateTime(DateTime.UtcNow));
+        this.session = new CalendarSession(DateOnly.FromDateTime(DateTime.UtcNow))
+        {
+            Zone = TimeZoneInfo.Local,
+        };
         try
         {
             this.session.Places = PlaceCatalogLoader.Load(DataManager);
@@ -187,7 +190,8 @@ public sealed class Plugin : IDalamudPlugin
             this.alarmMinute,
             this.session.AlarmAccepted,
             this.session.AlarmUnaccepted,
-            this.session.AlarmMinutesBefore);
+            this.session.AlarmMinutesBefore,
+            TimeZoneInfo.Local);
         if (this.session.AlarmResets && this.session.ShowResets)
         {
             var resets = GameSchedule.Due(
@@ -229,7 +233,7 @@ public sealed class Plugin : IDalamudPlugin
                 return;
             if (already.Any(hit => hit.Id == entry.Id))
                 return;
-            if (EventAlarm.AlreadyDue(entry, now, this.session.AlarmMinutesBefore))
+            if (EventAlarm.AlreadyDue(entry, now, this.session.AlarmMinutesBefore, TimeZoneInfo.Local))
                 due.Add(entry);
         }
 
@@ -380,10 +384,36 @@ public sealed class Plugin : IDalamudPlugin
             return;
         var sender = message.Sender.TextValue;
         this.session.HousingHint = this.CurrentHousingDistrict();
-        if (!this.session.TryAddShout(text, (int)message.LogKind, when, sender))
+        if (!this.session.TryAddShout(text, (int)message.LogKind, when, sender, SpeakerHome(message)))
             return;
 
         this.Save();
+    }
+
+    private static string SpeakerHome(IHandleableChatMessage message)
+    {
+        if (message is ILogMessage log && log.SourceEntity is { IsPlayer: true })
+        {
+            var id = log.SourceEntity.HomeWorldId;
+            if (id != 0)
+            {
+                var world = DataManager.GetExcelSheet<World>().GetRowOrDefault(id);
+                var name = world?.Name.ExtractText() ?? "";
+                if (name.Length > 0)
+                    return name;
+            }
+        }
+
+        foreach (var payload in message.Sender.Payloads)
+        {
+            if (payload is not PlayerPayload player || !player.World.IsValid)
+                continue;
+            var name = player.World.Value.Name.ExtractText();
+            if (name.Length > 0)
+                return name;
+        }
+
+        return "";
     }
 
     private string? CurrentHousingDistrict()

@@ -5,6 +5,8 @@ public enum ClearTarget
     All,
     Accepted,
     Unaccepted,
+    SyncAccepted,
+    SyncUnaccepted,
 }
 
 /// <summary>Yes/no confirmation before clearing shout history.</summary>
@@ -24,12 +26,24 @@ public sealed class ClearPrompt
 
     public void AnswerNo() => this.IsOpen = false;
 
-    public string Question => this.Target switch
+    public string Question(IReadOnlyList<string>? openServers, string? home)
     {
-        ClearTarget.Accepted => "Clear every accepted event?",
-        ClearTarget.Unaccepted => "Clear every unaccepted invite?",
-        _ => "Clear every detected shout, including accepted events?",
-    };
+        var action = this.Target switch
+        {
+            ClearTarget.Accepted => "Clear every accepted event on this computer?",
+            ClearTarget.Unaccepted => "Clear every unaccepted invite on this computer?",
+            ClearTarget.SyncAccepted => "Clear every accepted shared invite on this computer?",
+            ClearTarget.SyncUnaccepted => "Clear every unaccepted shared invite on this computer?",
+            _ => "Clear every local event on this computer?",
+        };
+        if (openServers is null || openServers.Count == 0)
+            return action;
+        var names = string.Join(", ", openServers);
+        var scope = openServers.Count > 1 && !string.IsNullOrWhiteSpace(home)
+            ? $" This clears events on all of those calendars, not only {home}."
+            : " This clears events on that calendar.";
+        return $"{action} You currently have the calendars for the following servers open: {names}.{scope}";
+    }
 
     public void AnswerYes(CalendarLog log)
     {
@@ -40,6 +54,9 @@ public sealed class ClearPrompt
                 break;
             case ClearTarget.Unaccepted:
                 log.ClearUnaccepted();
+                break;
+            case ClearTarget.SyncAccepted:
+            case ClearTarget.SyncUnaccepted:
                 break;
             default:
                 log.Clear();

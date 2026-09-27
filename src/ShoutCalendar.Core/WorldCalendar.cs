@@ -86,6 +86,36 @@ public sealed class WorldCalendar
             this.Selected = this.Home;
     }
 
+    public void SetDataCenter(string dataCenter, bool on)
+    {
+        foreach (var group in DataCenters.All)
+        {
+            if (!group.Name.Equals(dataCenter, StringComparison.OrdinalIgnoreCase))
+                continue;
+            foreach (var world in group.Worlds)
+                this.SetChecked(world, on);
+            return;
+        }
+    }
+
+    public bool DataCenterChecked(string dataCenter)
+    {
+        foreach (var group in DataCenters.All)
+        {
+            if (!group.Name.Equals(dataCenter, StringComparison.OrdinalIgnoreCase))
+                continue;
+            foreach (var world in group.Worlds)
+            {
+                if (!this.IsChecked(world))
+                    return false;
+            }
+
+            return group.Worlds.Count > 0;
+        }
+
+        return false;
+    }
+
     public IReadOnlyList<string> Extras()
     {
         var list = new List<string>();
@@ -119,6 +149,23 @@ public sealed class WorldCalendar
 
     public IReadOnlyList<SyncAnnouncement> Visible(IEnumerable<SyncAnnouncement> events) =>
         events.Where(item => item.World.Equals(this.Selected, StringComparison.OrdinalIgnoreCase)).ToArray();
+
+    public bool ShowsLocal(CalendarEntry entry)
+    {
+        if (entry.Manual)
+            return true;
+        if (this.Selected.Equals(this.Home, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (string.IsNullOrWhiteSpace(entry.Server))
+            return false;
+        foreach (var part in entry.Server.Split(','))
+        {
+            if (part.Trim().Equals(this.Selected, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
 
     public void ClearExtras()
     {

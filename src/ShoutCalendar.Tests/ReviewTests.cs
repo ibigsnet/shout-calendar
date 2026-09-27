@@ -161,6 +161,24 @@ public class ReviewTests
         prompt.Ask(ClearTarget.Unaccepted);
         prompt.AnswerYes(session.Log);
         Assert.Empty(session.Log.Entries);
+
+        prompt.Ask(ClearTarget.SyncAccepted);
+        var question = prompt.Question(["Diabolos", "Goblin"], "Diabolos");
+        Assert.Contains("You currently have the calendars for the following servers open: Diabolos, Goblin.", question, StringComparison.Ordinal);
+        Assert.Contains("not only Diabolos", question, StringComparison.Ordinal);
+        prompt.AnswerYes(session.Log);
+        Assert.Empty(session.Log.Entries);
+
+        var book = new SyncBook("Diabolos");
+        book.Worlds.SetChecked("Goblin", true);
+        book.Events.Add(new SyncAnnouncement { Id = "home", World = "Diabolos", Channel = 11, Text = "Maps at 8:00pm ward 13", Accepted = true, FromSync = true });
+        book.Events.Add(new SyncAnnouncement { Id = "gob", World = "Goblin", Channel = 11, Text = "Open at 3pm ward 2", FromSync = true });
+        book.Events.Add(new SyncAnnouncement { Id = "zal", World = "Zalera", Channel = 11, Text = "Open at 4pm ward 3", FromSync = true });
+        Assert.Equal(1, book.DismissOpen(ClearTarget.SyncUnaccepted));
+        Assert.Contains(book.Events, row => row.Id == "zal");
+        Assert.DoesNotContain(book.Events, row => row.Id == "gob");
+        Assert.Equal(1, book.DismissOpen(ClearTarget.SyncAccepted));
+        Assert.DoesNotContain(book.Events, row => row.Id == "home");
     }
 
     [Fact]

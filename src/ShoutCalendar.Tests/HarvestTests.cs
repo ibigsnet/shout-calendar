@@ -215,6 +215,150 @@ public class HarvestTests
     }
 
     [Fact]
+    public void AGoblinAtHomeIsSharedOnGoblinUnlessTheTextNamesAWorld()
+    {
+        var heard = new CalendarEntry(
+            new DateOnly(2026, 9, 27),
+            new TimeOnly(19, 0),
+            null,
+            7,
+            null,
+            "The Goblet",
+            "Maps at 7:00 PM Goblet W7 P5",
+            "Traveler",
+            false,
+            "row",
+            DateTimeOffset.UtcNow,
+            null,
+            11,
+            false,
+            false,
+            "Goblin");
+        Assert.Equal("Goblin", SyncAnnouncement.FromLocal(heard, "Diabolos").World);
+
+        var named = heard with { Server = "Crystal, Zalera" };
+        Assert.Equal("Zalera", SyncAnnouncement.FromLocal(named, "Diabolos").World);
+
+        var crystalOnly = heard with { Server = "Crystal" };
+        Assert.Equal("Goblin", SyncAnnouncement.FromLocal(crystalOnly, "Diabolos").World);
+
+        var unknown = heard with { SpeakerWorld = "" };
+        Assert.Equal("Diabolos", SyncAnnouncement.FromLocal(unknown, "Diabolos").World);
+
+        var hand = heard with { Manual = true, Channel = 0 };
+        Assert.Empty(SyncExport.FromLocal(new SyncBook("Diabolos"), [hand]));
+        var plugin = File.ReadAllText(Path.Combine(RepoRoot(), "src", "ShoutCalendar", "Plugin.cs"));
+        Assert.Contains("HomeWorldId", plugin, StringComparison.Ordinal);
+        Assert.Contains("SpeakerHome", plugin, StringComparison.Ordinal);
+    }
+
+    private static string RepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "QUESTIONS.md")))
+                return dir.FullName;
+            dir = dir.Parent;
+        }
+
+        throw new InvalidOperationException("Repository root was not found.");
+    }
+
+    [Fact]
+    public void AZaleraInviteStaysVisibleOnTheHomeCalendar()
+    {
+        var worlds = new WorldCalendar("Diabolos");
+        var oryn = new CalendarEntry(
+            new DateOnly(2026, 9, 27),
+            null,
+            null,
+            17,
+            "Crystal, Zalera",
+            "ward 17, plot 60, The Goblet, Crystal, Zalera",
+            "Tonight Flying HIGH for EGGYs Birthday Goblet W17 P60",
+            "Oryn Ka'ge",
+            true,
+            "oryn",
+            DateTimeOffset.UtcNow,
+            null,
+            0,
+            false,
+            true);
+        Assert.True(worlds.ShowsLocal(oryn));
+        worlds.SetDataCenter("Crystal", true);
+        Assert.True(worlds.Select("Zalera"));
+        Assert.True(worlds.ShowsLocal(oryn));
+        Assert.True(worlds.Select("Goblin"));
+        Assert.True(worlds.ShowsLocal(oryn));
+        var heard = oryn with { Manual = false, Channel = 11 };
+        Assert.False(worlds.ShowsLocal(heard));
+        Assert.True(worlds.Select("Diabolos"));
+        Assert.True(worlds.ShowsLocal(heard));
+    }
+
+    [Fact]
+    public void CheckingCrystalSelectsItsWorlds()
+    {
+        var worlds = new WorldCalendar("Diabolos");
+        Assert.False(worlds.DataCenterChecked("Crystal"));
+        worlds.SetDataCenter("Crystal", true);
+        Assert.True(worlds.IsChecked("Goblin"));
+        Assert.True(worlds.IsChecked("Zalera"));
+        Assert.True(worlds.IsChecked("Diabolos"));
+        Assert.True(worlds.DataCenterChecked("Crystal"));
+        Assert.False(worlds.IsChecked("Faerie"));
+        worlds.SetDataCenter("Crystal", false);
+        Assert.True(worlds.IsChecked("Diabolos"));
+        Assert.False(worlds.IsChecked("Goblin"));
+        Assert.False(worlds.DataCenterChecked("Crystal"));
+    }
+
+    [Fact]
+    public void ARepeatedEmoNightUpdatesTheAcceptedRow()
+    {
+        var session = new CalendarSession(new DateOnly(2026, 9, 27));
+        session.Places = new PlaceCatalog(["The Goblet"]);
+        var when = new DateTimeOffset(new DateTime(2026, 9, 27, 18, 0, 0));
+        Assert.True(session.TryAddShout(
+            "Bring your black eyeliner and emo anthems! Tonight Emo Night Goblet W7 P5 7:00 PM",
+            ShoutHarvest.ShoutChannel,
+            when,
+            "Femboi"));
+        var first = Assert.Single(session.Log.Entries);
+        Assert.True(session.Log.Accept(first.Id));
+        Assert.True(session.TryAddShout(
+            "Emo Night tonight. Bring black eyeliner and emo anthems. Goblet W7 P5 at 8:00 PM.",
+            ShoutHarvest.ShoutChannel,
+            when.AddMinutes(30),
+            "Someone"));
+        var updated = Assert.Single(session.Log.Entries);
+        Assert.True(updated.Accepted);
+        Assert.Equal(new TimeOnly(20, 0), updated.Time);
+        Assert.Equal(first.Id, updated.Id);
+        Assert.True(session.TryAddShout(
+            "Emo Night tonight. Bring black eyeliner and emo anthems. Goblet W9 P5 at 8:00 PM.",
+            ShoutHarvest.ShoutChannel,
+            when.AddMinutes(40),
+            "Someone"));
+        Assert.Equal(2, session.Log.Entries.Count);
+    }
+
+    [Fact]
+    public void OrynBirthdayLineIsKeptOnZalera()
+    {
+        var places = new PlaceCatalog(["The Goblet"]);
+        var when = new DateTimeOffset(new DateTime(2026, 9, 27, 18, 0, 0));
+        const string text = "Tonight: \uE000\uE005\uE002\uE075 \uE03C\uE07A\uE075\uE084 \u2665 Flying HIGH for EGGYs Birthday Edition! \u2665 Featuring Captains \u266A Raindrop, Yams, Aemilia, Keshi & Swage! \u266A \uE031 Wings Up @ \uE06F \uE015\uE06E ET Nyoooom! Dress code: Party Hats! \u2665 Join us for \uE06F Drinks, Music, Dancing, Tarot, Prizes \uE03E & Best Frens! - All that's missing is YOU! \u2605 \uE03C\uE07A\uE075\uE084 \uE008 Crystal, Zalera, Goblet, W17, P60 \u2665";
+        var entry = ShoutHarvest.TryHarvest(text, ShoutHarvest.ShoutChannel, when, places, aggressive: true);
+        Assert.NotNull(entry);
+        Assert.Equal(17, entry.Ward);
+        Assert.Contains("plot 60", entry.Place, StringComparison.OrdinalIgnoreCase);
+        var shared = SyncAnnouncement.FromLocal(entry with { SpeakerWorld = "Goblin", Channel = ShoutHarvest.ShoutChannel }, "Diabolos");
+        Assert.Equal("Zalera", shared.World);
+    }
+
+    [Fact]
     public void ABirthdayShoutWithAWardIsKept()
     {
         var places = new PlaceCatalog(["The Goblet"]);
@@ -372,5 +516,77 @@ public class HarvestTests
         Assert.True(EventRepeat.FallsOn(entry, new DateOnly(2026, 10, 7)));
         Assert.True(EventRepeat.FallsOn(entry, new DateOnly(2026, 10, 28)));
         Assert.False(EventRepeat.FallsOn(entry, new DateOnly(2026, 10, 14)));
+    }
+
+    [Fact]
+    public void PacificClockBecomesLocalAndAStoredFifteenHundredFollowsTheText()
+    {
+        var eastern = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+        var pacific = TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles");
+        var central = TimeZoneInfo.FindSystemTimeZoneById("America/Chicago");
+        var mountain = TimeZoneInfo.FindSystemTimeZoneById("America/Denver");
+        var when = new DateTimeOffset(2026, 9, 27, 21, 49, 0, TimeSpan.Zero);
+        const string toast = "The taproom, /Toast, is opening soon! Come for some drinks, live bard music and chill RP (RP not required). Open at 3pm PT, Goblin > Lavender Beds > Ward 14, Plot 8";
+        var places = new PlaceCatalog(["The Lavender Beds"]);
+
+        Assert.Null(ShoutHarvest.TryHarvest("Ely Sol'aris laughs at Mistress Boss'bunny.", ShoutHarvest.ShoutChannel, when, places, zone: eastern));
+
+        var entry = ShoutHarvest.TryHarvest(toast, ShoutHarvest.ShoutChannel, when, places, aggressive: true, zone: eastern);
+        Assert.NotNull(entry);
+        Assert.Equal(toast, entry.EventText);
+        Assert.Equal(14, entry.Ward);
+        Assert.Contains("plot 8", entry.Place, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("Goblin", entry.Server);
+        Assert.Contains("The Lavender Beds", entry.Place, StringComparison.Ordinal);
+        Assert.Equal(new DateOnly(2026, 9, 27), entry.Date);
+        Assert.Equal(new TimeOnly(18, 0), entry.Time);
+        Assert.False(OngoingCheck.IsOngoing(entry, when));
+
+        var inLosAngeles = ShoutHarvest.TryHarvest(toast, ShoutHarvest.ShoutChannel, when, places, aggressive: true, zone: pacific);
+        Assert.NotNull(inLosAngeles);
+        Assert.Equal(new TimeOnly(15, 0), inLosAngeles.Time);
+        Assert.Equal(new DateOnly(2026, 9, 27), inLosAngeles.Date);
+
+        var late = ShoutHarvest.TryHarvest("Open at 11:30pm PT ward 14 plot 8", ShoutHarvest.ShoutChannel, when, places, aggressive: true, zone: eastern);
+        Assert.NotNull(late);
+        Assert.Equal(new TimeOnly(2, 30), late.Time);
+        Assert.Equal(new DateOnly(2026, 9, 28), late.Date);
+
+        var plain = ShoutHarvest.TryHarvest("Open at 3pm ward 14 plot 8", ShoutHarvest.ShoutChannel, when, places, aggressive: true, zone: eastern);
+        Assert.NotNull(plain);
+        Assert.Equal(new TimeOnly(15, 0), plain.Time);
+
+        var serverTime = ShoutHarvest.TryHarvest("8:00pm ST ward 4 on Diabolos", ShoutHarvest.ShoutChannel, when, zone: eastern);
+        Assert.NotNull(serverTime);
+        Assert.Equal(new TimeOnly(20, 0), serverTime.Time);
+
+        Assert.Equal(new TimeOnly(12, 0), ShoutHarvest.TryHarvest("Open at 3pm ET ward 1", ShoutHarvest.ShoutChannel, when, aggressive: true, zone: pacific)!.Time);
+        Assert.Equal(new TimeOnly(16, 0), ShoutHarvest.TryHarvest("Open at 3pm CT ward 1", ShoutHarvest.ShoutChannel, when, aggressive: true, zone: eastern)!.Time);
+        Assert.Equal(new TimeOnly(17, 0), ShoutHarvest.TryHarvest("Open at 3pm MT ward 1", ShoutHarvest.ShoutChannel, when, aggressive: true, zone: eastern)!.Time);
+        Assert.Null(ShoutHarvest.TryHarvest("in 20 minutes on Faerie", ShoutHarvest.ShoutChannel, when, zone: eastern)!.Time);
+
+        var stored = entry with { Time = new TimeOnly(15, 0), Id = "toast", Accepted = true };
+        var face = ZoneClock.Shown(stored, eastern);
+        Assert.Equal(new DateOnly(2026, 9, 27), face.Date);
+        Assert.Equal(new TimeOnly(18, 0), face.Time);
+        var afternoon = new DateTime(2026, 9, 27, 17, 49, 0);
+        Assert.Empty(EventAlarm.Due([stored], afternoon, afternoon.AddMinutes(-1), true, false, 0, eastern));
+        var evening = new DateTime(2026, 9, 27, 18, 0, 0);
+        var hit = Assert.Single(EventAlarm.Due([stored], evening, evening.AddMinutes(-1), true, false, 0, eastern));
+        Assert.Equal("toast", hit.Id);
+
+        var directory = Path.Combine(Path.GetTempPath(), "shout-watch-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var unix = (uint)when.ToUnixTimeSeconds();
+        var file = LogFixture.File(
+            0,
+            LogFixture.Entry(unix, 0x0B, 0x0B, "Tirita Rita", LogFixture.Utf8("Ely Sol'aris laughs at Mistress Boss'bunny.")),
+            LogFixture.Entry(unix, 0x0B, 0x0B, "Tirita Rita", LogFixture.Utf8(toast)));
+        File.WriteAllBytes(Path.Combine(directory, "00000000.log"), file);
+        var report = ChatWatch.Report([directory], places, eastern);
+        Assert.Contains("kept: yes", report, StringComparison.Ordinal);
+        Assert.Contains("clock: 18:00", report, StringComparison.Ordinal);
+        Assert.DoesNotContain("Mistress Boss", report, StringComparison.Ordinal);
+        Directory.Delete(directory, true);
     }
 }

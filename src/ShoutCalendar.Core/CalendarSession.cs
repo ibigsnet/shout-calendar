@@ -24,6 +24,9 @@ public sealed class CalendarSession
 
     public string? HousingHint { get; set; }
 
+    /// <summary>Zone used when a shout names PT, ET, CT, or MT. Unset leaves those clocks as written.</summary>
+    public TimeZoneInfo? Zone { get; set; }
+
     public int UnacceptedHoldDays { get; set; } = 1;
 
     /// <summary>When set, a line is kept only if two of date, time, and place are present.</summary>
@@ -140,7 +143,7 @@ public sealed class CalendarSession
         this.Month = day.Month;
     }
 
-    public bool TryAddShout(string? text, int channel, DateTimeOffset shoutTimestamp, string? sender = null)
+    public bool TryAddShout(string? text, int channel, DateTimeOffset shoutTimestamp, string? sender = null, string? speakerWorld = null)
     {
         var combined = this.burst.Push(sender, channel, shoutTimestamp, text, out var replaceId);
         var detected = ShoutHarvest.TryHarvest(
@@ -150,10 +153,15 @@ public sealed class CalendarSession
             this.Places,
             this.Channels,
             this.HousingHint,
-            this.AggressiveFilter);
+            this.AggressiveFilter,
+            this.Zone);
         if (detected is null)
             return false;
-        detected = detected with { Sender = sender?.Trim() ?? "" };
+        detected = detected with
+        {
+            Sender = sender?.Trim() ?? "",
+            SpeakerWorld = speakerWorld?.Trim() ?? "",
+        };
         if (replaceId is not null && this.Log.Rewrite(replaceId, detected))
         {
             this.burst.Remember(replaceId);

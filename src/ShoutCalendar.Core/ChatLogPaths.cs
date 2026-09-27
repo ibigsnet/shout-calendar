@@ -47,6 +47,36 @@ public static class ChatLogPaths
         return null;
     }
 
+    public static IEnumerable<string> LogDirectories(IEnumerable<string> roots)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var root in roots)
+        {
+            if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
+                continue;
+            IEnumerable<string> characters;
+            try
+            {
+                characters = Directory.GetDirectories(root, "FFXIV_CHR*");
+            }
+            catch (IOException)
+            {
+                continue;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                continue;
+            }
+
+            foreach (var character in characters)
+            {
+                var log = Path.Combine(character, "log");
+                if (Directory.Exists(log) && seen.Add(log))
+                    yield return log;
+            }
+        }
+    }
+
     private static void AddXlcore(List<string> roots, string? home)
     {
         if (string.IsNullOrWhiteSpace(home))

@@ -6,7 +6,7 @@ namespace ShoutCalendar.Core;
 /// <summary>
 /// Decides whether a shout becomes one calendar entry.
 /// A watched chat line is kept when it has a clock time or a calendar date, and a place.
-/// Clock labels are stored as written. No timezone, Eorzea-time, or duration is applied.
+/// PT, ET, CT, and MT move into the calendar zone when one is supplied. ST, Eorzea time, and durations are not clocks.
 /// </summary>
 public static class ShoutHarvest
 {
@@ -18,10 +18,6 @@ public static class ShoutHarvest
 
     /// <summary>Dalamud <c>XivChatType.FreeCompany</c>.</summary>
     public const int FreeCompanyChannel = 24;
-
-    private static readonly Regex ClockRegex = new(
-        @"\b(?:(?<h24>[01]?\d|2[0-3]):(?<m>[0-5]\d)(?:\s*(?<ampm>[ap]\.?m\.?))?|(?<h12>[1-9]|1[0-2])\s*(?<ampm2>[ap]\.?m\.?))\b",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     private static readonly Regex WardRegex = new(
         @"\b(?:ward\s*#?\s*|(?<![A-Za-z])[Ww])(?<n>30|[12][0-9]|[1-9])(?!\d)",
@@ -54,7 +50,8 @@ public static class ShoutHarvest
         PlaceCatalog? places = null,
         IReadOnlySet<int>? channels = null,
         string? housingHint = null,
-        bool aggressive = false)
+        bool aggressive = false,
+        TimeZoneInfo? zone = null)
     {
         if (!IsWatched(channel, channels) || string.IsNullOrWhiteSpace(text))
             return null;
@@ -119,6 +116,28 @@ public static class ShoutHarvest
             date = nowDay;
         else if (date is null && clocks.Count > 0)
             date = DateOnly.FromDateTime(shoutTimestamp.UtcDateTime);
+        if (zone is not null && date is DateOnly civil && clocks.Count > 0)
+        {
+            var walls = ZoneClock.Walls(text);
+            var shifted = new List<TimeOnly>(walls.Count);
+            DateOnly? zonedDate = null;
+            foreach (var wall in walls)
+            {
+                var moved = ZoneClock.Converts(wall.Label)
+                    ? ZoneClock.Move(civil, wall.Time, wall.Label, zone)
+                    : (civil, wall.Time);
+                zonedDate ??= moved.Item1;
+                shifted.Add(moved.Item2);
+            }
+
+            if (shifted.Count > 0)
+            {
+                clocks = shifted;
+                if (zonedDate is DateOnly start && walls.Count > 0 && ZoneClock.Converts(walls[0].Label))
+                    date = start;
+            }
+        }
+
         TimeOnly? end = clocks.Count == 2 ? clocks[1] : null;
         TimeOnly? time = clocks.Count > 0 ? clocks[0] : null;
         var server = servers.Count == 0 ? null : string.Join(", ", servers);
@@ -318,49 +337,9 @@ public static class ShoutHarvest
     private static List<TimeOnly> ReadClocks(string text)
     {
         var clocks = new List<TimeOnly>();
-        foreach (Match match in ClockRegex.Matches(text))
-        {
-            if (TryReadClock(match, out var time))
-                clocks.Add(time);
-        }
-
+        foreach (var wall in ZoneClock.Walls(text))
+            clocks.Add(wall.Time);
         return clocks;
-    }
-
-    private static bool TryReadClock(Match match, out TimeOnly time)
-    {
-        time = default;
-        int hour;
-        int minute;
-        string? ampm;
-        if (match.Groups["h24"].Success)
-        {
-            hour = int.Parse(match.Groups["h24"].Value, CultureInfo.InvariantCulture);
-            minute = int.Parse(match.Groups["m"].Value, CultureInfo.InvariantCulture);
-            ampm = match.Groups["ampm"].Success ? match.Groups["ampm"].Value : null;
-        }
-        else
-        {
-            hour = int.Parse(match.Groups["h12"].Value, CultureInfo.InvariantCulture);
-            minute = 0;
-            ampm = match.Groups["ampm2"].Value;
-        }
-
-        if (ampm is not null)
-        {
-            var marker = ampm.Replace(".", "", StringComparison.Ordinal).ToLowerInvariant();
-            if (hour is < 1 or > 12)
-                return false;
-            if (marker == "am")
-                hour = hour == 12 ? 0 : hour;
-            else if (marker == "pm")
-                hour = hour == 12 ? 12 : hour + 12;
-            else
-                return false;
-        }
-
-        time = new TimeOnly(hour, minute);
-        return true;
     }
 
     private static List<string> ReadPlaceWords(string text)

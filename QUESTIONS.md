@@ -12,7 +12,7 @@ No AI model is called. A message is kept only when the text has a time or a plac
 
 ## How to treat ST/ET/PT labels, Eorzea time, and relative times
 
-ST, ET, and PT are not converted. Eorzea time is not converted. Today and tonight use the message's date. Tomorrow is the next day. "in 20 minutes" is not read as a clock.
+PT, ET, CT, and MT are converted into the calendar zone. ST is not converted. Eorzea time is not converted. Today and tonight use the message's date. Tomorrow is the next day. "in 20 minutes" is not read as a clock.
 
 ## How long a one-time shout stays ongoing
 
