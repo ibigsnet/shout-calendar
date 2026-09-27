@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ShoutCalendar.Core/ShoutCalendar.Core.csproj" />
+    <Project Path="src/ShoutCalendar.HarvestHarness/ShoutCalendar.HarvestHarness.csproj" />
+    <Project Path="src/ShoutCalendar.Tests/ShoutCalendar.Tests.csproj" />
+    <Project Path="src/ShoutCalendar/ShoutCalendar.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,121 @@
+using System.Globalization;
+using Dalamud.Configuration;
+using ShoutCalendar.Core;
+
+namespace ShoutCalendar;
+
+public sealed class PluginConfig : IPluginConfiguration
+{
+    public int Version { get; set; } = 1;
+
+    public List<StoredEvent> Events { get; set; } = new();
+
+    /// <summary>Log lines already copied into <see cref="Events"/>. Not a duplicate policy for live shouts.</summary>
+    public List<string> ImportedLogLines { get; set; } = new();
+
+    /// <summary>Null means the install defaults in <see cref="ChatChannels.DefaultIds"/>.</summary>
+    public List<int>? WatchedChannels { get; set; }
+
+    public int UnacceptedHoldDays { get; set; } = 14;
+
+    public IEnumerable<CalendarEntry> ToEntries()
+    {
+        foreach (var stored in this.Events)
+        {
+            if (StoredEvent.TryToEntry(stored, out var entry))
+                yield return entry;
+        }
+    }
+
+    public void Add(CalendarEntry entry)
+    {
+        this.Events.Add(StoredEvent.From(entry));
+    }
+}
+
+public sealed class StoredEvent
+{
+    public string Date { get; set; } = "";
+
+    public string Time { get; set; } = "";
+
+    public string? End { get; set; }
+
+    public int? Ward { get; set; }
+
+    public string? Server { get; set; }
+
+    public string Place { get; set; } = "";
+
+    public string EventText { get; set; } = "";
+
+    public string Sender { get; set; } = "";
+
+    public bool Accepted { get; set; }
+
+    public string Id { get; set; } = "";
+
+    public string DetectedAt { get; set; } = "";
+
+    public static StoredEvent From(CalendarEntry entry)
+    {
+        return new StoredEvent
+        {
+            Date = entry.Date?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "",
+            Time = entry.Time?.ToString("HH:mm", CultureInfo.InvariantCulture) ?? "",
+            End = entry.End?.ToString("HH:mm", CultureInfo.InvariantCulture),
+            Ward = entry.Ward,
+            Server = entry.Server,
+            Place = entry.Place,
+            EventText = entry.EventText,
+            Sender = entry.Sender,
+            Accepted = entry.Accepted,
+            Id = entry.Id,
+            DetectedAt = entry.DetectedAt == default
+                ? ""
+                : entry.DetectedAt.ToString("o", CultureInfo.InvariantCulture),
+        };
+    }
+
+    public static bool TryToEntry(StoredEvent stored, out CalendarEntry entry)
+    {
+        entry = null!;
+        DateOnly? date = null;
+        if (!string.IsNullOrEmpty(stored.Date))
+        {
+            if (!DateOnly.TryParseExact(stored.Date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsedDate))
+                return false;
+            date = parsedDate;
+        }
+        TimeOnly? time = null;
+        if (!string.IsNullOrEmpty(stored.Time))
+        {
+            if (!TimeOnly.TryParseExact(stored.Time, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsedTime))
+                return false;
+            time = parsedTime;
+        }
+        TimeOnly? end = null;
+        if (!string.IsNullOrEmpty(stored.End))
+        {
+            if (!TimeOnly.TryParseExact(stored.End, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsedEnd))
+                return false;
+            end = parsedEnd;
+        }
+
+        entry = new CalendarEntry(
+            date,
+            time,
+            end,
+            stored.Ward,
+            stored.Server,
+            stored.Place,
+            stored.EventText,
+            stored.Sender,
+            stored.Accepted,
+            string.IsNullOrEmpty(stored.Id) ? Guid.NewGuid().ToString("N") : stored.Id,
+            DateTimeOffset.TryParse(stored.DetectedAt, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var detectedAt)
+                ? detectedAt
+                : default);
+        return true;
+    }
+}

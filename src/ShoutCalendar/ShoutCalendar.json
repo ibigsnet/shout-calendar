@@ -1,0 +1,6 @@
+{
+  "Name": "Shout Calendar (provisional)",
+  "Author": "provisional",
+  "Punchline": "Provisional calendar of shout-chat events that state a clock time and a ward or server.",
+  "Description": "Provisional local Dalamud plugin. A shout is added when it states an explicit clock time and a ward number or an FFXIV world or data-center name. Display name, author, and several behaviors are open questions in QUESTIONS.md."
+}

@@ -1,0 +1,16 @@
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+  <PropertyGroup>
+    <Version>0.1.0</Version>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <Author>provisional</Author>
+    <Name>Shout Calendar (provisional)</Name>
+    <Punchline>Provisional calendar of shout-chat events that state a clock time and a ward or server.</Punchline>
+    <Description>Provisional local Dalamud plugin. A shout is added when it states an explicit clock time and a ward number or an FFXIV world or data-center name. Display name, author, and several behaviors are open questions in QUESTIONS.md.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ShoutCalendar.Core\ShoutCalendar.Core.csproj" />
+  </ItemGroup>
+</Project>
