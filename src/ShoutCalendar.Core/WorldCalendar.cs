@@ -147,8 +147,11 @@ public sealed class WorldCalendar
         return true;
     }
 
-    public IReadOnlyList<SyncAnnouncement> Visible(IEnumerable<SyncAnnouncement> events) =>
-        events.Where(item => item.World.Equals(this.Selected, StringComparison.OrdinalIgnoreCase)).ToArray();
+    public IReadOnlyList<SyncAnnouncement> Visible(IEnumerable<SyncAnnouncement> events)
+    {
+        var open = new HashSet<string>(this.Selectable(), StringComparer.OrdinalIgnoreCase);
+        return events.Where(item => open.Contains(item.World)).ToArray();
+    }
 
     public bool ShowsLocal(CalendarEntry entry)
     {

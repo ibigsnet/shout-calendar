@@ -195,12 +195,12 @@ public sealed class CalendarWindow : Window
             return;
 
         var rows = book.Events
-            .Where(item => item.IsSyncPending && item.World.Equals(book.Worlds.Selected, StringComparison.OrdinalIgnoreCase))
+            .Where(item => item.IsSyncPending && book.Worlds.IsChecked(item.World))
             .ToList();
         if (rows.Count == 0 && book.Informedaholic)
             return;
         ImGui.Separator();
-        ImGui.TextWrapped($"Shared on {book.Worlds.Selected}");
+        ImGui.TextWrapped("Shared on " + string.Join(", ", book.Worlds.Selectable()));
         if (rows.Count == 0)
         {
             ImGui.TextDisabled("No shared invites are waiting.");
@@ -1301,15 +1301,19 @@ public sealed class CalendarWindow : Window
         }
         else
         {
-            const float comboWidth = 180f;
+            const float comboWidth = 220f;
             ImGui.SetCursorPos(new Vector2(regionMax - comboWidth, y));
             ImGui.SetNextItemWidth(comboWidth);
-            if (ImGui.BeginCombo("##server-select", book!.Worlds.Selected))
+            var openNames = string.Join(", ", book!.Worlds.Selectable());
+            if (ImGui.BeginCombo("##server-select", openNames))
             {
-                foreach (var world in book.Worlds.Selectable())
+                foreach (var group in DataCenters.All)
                 {
-                    if (ImGui.Selectable($"{world}##server-{world}", world == book.Worlds.Selected))
-                        book.Worlds.Select(world);
+                    ImGui.TextDisabled(group.Name);
+                    ImGui.Indent();
+                    foreach (var world in group.Worlds)
+                        this.DrawWorldCheck(book, world, "open");
+                    ImGui.Unindent();
                 }
 
                 ImGui.EndCombo();
@@ -1430,28 +1434,32 @@ public sealed class CalendarWindow : Window
         foreach (var group in DataCenters.All)
         {
             var centerOn = book.Worlds.DataCenterChecked(group.Name);
-            var open = ImGui.TreeNodeEx($"##dc-node-{group.Name}", ImGuiTreeNodeFlags.SpanAvailWidth);
-            ImGui.SameLine();
-            if (ImGui.Checkbox($"{group.Name}##dc-{group.Name}", ref centerOn))
+            if (ImGui.Checkbox($"##dc-{group.Name}", ref centerOn))
                 book.Worlds.SetDataCenter(group.Name, centerOn);
+            ImGui.SameLine();
+            var open = ImGui.TreeNode(group.Name);
             if (!open)
                 continue;
+            ImGui.Indent();
             foreach (var world in group.Worlds)
-            {
-                var home = world == book.Worlds.Home;
-                var on = book.Worlds.IsChecked(world);
-                if (home)
-                    ImGui.BeginDisabled();
-                if (ImGui.Checkbox($"{world}##sync-world-{world}", ref on) && !home)
-                    book.Worlds.SetChecked(world, on);
-                if (home)
-                    ImGui.EndDisabled();
-            }
-
+                this.DrawWorldCheck(book, world, "sync-world");
+            ImGui.Unindent();
             ImGui.TreePop();
         }
 
         ImGui.EndChild();
+    }
+
+    private void DrawWorldCheck(SyncBook book, string world, string scope)
+    {
+        var home = world == book.Worlds.Home;
+        var on = book.Worlds.IsChecked(world);
+        if (home)
+            ImGui.BeginDisabled();
+        if (ImGui.Checkbox($"{world}##{scope}-{world}", ref on) && !home)
+            book.Worlds.SetChecked(world, on);
+        if (home)
+            ImGui.EndDisabled();
     }
 
     private static Vector4 RelayInk(string status)
