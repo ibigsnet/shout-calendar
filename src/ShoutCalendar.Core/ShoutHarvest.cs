@@ -32,7 +32,7 @@ public static class ShoutHarvest
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     private static readonly Regex WeekdayRegex = new(
-        @"\b(?:(?<when>next|this)\s+)?(?<weekday>sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b",
+        @"\b(?:the\s+)?(?<after>sunday|monday|tuesday|wednesday|thursday|friday|saturday)\s+after\s+next\b|\b(?:(?<when>next|this)\s+)?(?<weekday>sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     private static readonly Regex DateRegex = new(
@@ -103,8 +103,11 @@ public static class ShoutHarvest
             return null;
         }
 
+        var repeat = ReadRepeat(text, statedDate ?? DateOnly.FromDateTime(shoutTimestamp.UtcDateTime));
         DateOnly? date = statedDate;
-        if (date is null && clocks.Count > 0)
+        if (repeat is not null)
+            date = repeat.FirstOnOrAfter(statedDate ?? DateOnly.FromDateTime(shoutTimestamp.UtcDateTime));
+        else if (date is null && clocks.Count > 0)
             date = DateOnly.FromDateTime(shoutTimestamp.UtcDateTime);
         TimeOnly? end = clocks.Count == 2 ? clocks[1] : null;
         TimeOnly? time = clocks.Count > 0 ? clocks[0] : null;
@@ -121,7 +124,8 @@ public static class ShoutHarvest
             "",
             false,
             "",
-            default);
+            default,
+            repeat);
     }
 
     public static IReadOnlyList<CalendarEntry> HarvestLog(ReadOnlySpan<byte> log, PlaceCatalog? places = null)
@@ -155,6 +159,66 @@ public static class ShoutHarvest
             : day;
     }
 
+    private static readonly Regex EveryOtherRegex = new(
+        @"\bevery\s+other\s+(?:week|(?<weekday>sunday|monday|tuesday|wednesday|thursday|friday|saturday))\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private static readonly Regex EveryNthRegex = new(
+        @"\bevery\s+(?<nths>(?:(?:first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th|last)\b\s*(?:and|,)?\s*)+)(?<weekday>sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private static readonly Regex EveryWeekRegex = new(
+        @"\bevery\s+(?<weekday>sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private static EventRepeat? ReadRepeat(string text, DateOnly anchor)
+    {
+        var other = EveryOtherRegex.Match(text);
+        if (other.Success)
+        {
+            var weekday = other.Groups["weekday"].Success
+                ? Weekday(other.Groups["weekday"].Value)
+                : anchor.DayOfWeek;
+            return weekday is DayOfWeek day ? new EventRepeat(EventRepeat.Biweekly, day, 0) : null;
+        }
+
+        var nth = EveryNthRegex.Match(text);
+        if (nth.Success && Weekday(nth.Groups["weekday"].Value) is DayOfWeek nthDay)
+        {
+            var mask = 0;
+            var words = nth.Groups["nths"].Value;
+            if (words.Contains("1st", StringComparison.OrdinalIgnoreCase) || words.Contains("first", StringComparison.OrdinalIgnoreCase))
+                mask |= 1;
+            if (words.Contains("2nd", StringComparison.OrdinalIgnoreCase) || words.Contains("second", StringComparison.OrdinalIgnoreCase))
+                mask |= 2;
+            if (words.Contains("3rd", StringComparison.OrdinalIgnoreCase) || words.Contains("third", StringComparison.OrdinalIgnoreCase))
+                mask |= 4;
+            if (words.Contains("4th", StringComparison.OrdinalIgnoreCase) || words.Contains("fourth", StringComparison.OrdinalIgnoreCase))
+                mask |= 8;
+            if (words.Contains("5th", StringComparison.OrdinalIgnoreCase) || words.Contains("fifth", StringComparison.OrdinalIgnoreCase))
+                mask |= 32;
+            if (words.Contains("last", StringComparison.OrdinalIgnoreCase))
+                mask |= 16;
+            if (mask != 0)
+                return new EventRepeat(EventRepeat.Month, nthDay, mask);
+        }
+
+        var weekly = EveryWeekRegex.Match(text);
+        if (weekly.Success && Weekday(weekly.Groups["weekday"].Value) is DayOfWeek weeklyDay)
+            return new EventRepeat(EventRepeat.Weekly, weeklyDay, 0);
+        return null;
+    }
+
+    private static DayOfWeek? Weekday(string text)
+    {
+        var names = new[]
+        {
+            "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
+        };
+        var index = Array.FindIndex(names, name => name.Equals(text, StringComparison.OrdinalIgnoreCase));
+        return index < 0 ? null : (DayOfWeek)index;
+    }
+
     private static DateOnly? ReadWeekday(string text, DateTimeOffset shoutTimestamp)
     {
         var match = WeekdayRegex.Match(text);
@@ -165,15 +229,18 @@ public static class ShoutHarvest
         {
             "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
         };
-        var target = Array.FindIndex(names, name => name.Equals(match.Groups["weekday"].Value, StringComparison.OrdinalIgnoreCase));
+        var written = match.Groups["after"].Success ? match.Groups["after"].Value : match.Groups["weekday"].Value;
+        var target = Array.FindIndex(names, name => name.Equals(written, StringComparison.OrdinalIgnoreCase));
         if (target < 0)
             return null;
 
         var today = DateOnly.FromDateTime(shoutTimestamp.UtcDateTime);
         var delta = (target - (int)today.DayOfWeek + 7) % 7;
-        var next = match.Groups["when"].Success
-            && match.Groups["when"].Value.Equals("next", StringComparison.OrdinalIgnoreCase);
-        if (next && delta == 0)
+        if (match.Groups["after"].Success)
+            delta = delta == 0 ? 14 : delta + 7;
+        else if (match.Groups["when"].Success
+            && match.Groups["when"].Value.Equals("next", StringComparison.OrdinalIgnoreCase)
+            && delta == 0)
             delta = 7;
         return today.AddDays(delta);
     }

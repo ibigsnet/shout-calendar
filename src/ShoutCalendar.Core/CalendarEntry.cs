@@ -15,4 +15,5 @@ public sealed record CalendarEntry(
     string Sender,
     bool Accepted,
     string Id,
-    DateTimeOffset DetectedAt);
+    DateTimeOffset DetectedAt,
+    EventRepeat? Repeat = null);

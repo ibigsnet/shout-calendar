@@ -13,7 +13,7 @@ public static class OngoingCheck
             return false;
 
         var utc = evaluationInstant.UtcDateTime;
-        if (entry.Date is not DateOnly date || DateOnly.FromDateTime(utc) != date)
+        if (!EventRepeat.FallsOn(entry, DateOnly.FromDateTime(utc)))
             return false;
 
         var clock = new TimeOnly(utc.Hour, utc.Minute);

@@ -127,6 +127,8 @@ public sealed class CalendarWindow : Window
             }
 
             var dayText = entry.Date?.ToString("yyyy-MM-dd") ?? "needs a date";
+            if (entry.Repeat is not null)
+                dayText += " · " + entry.Repeat.Label;
             ImGui.TextUnformatted($"{dayText} {WhenText(entry)}");
             if (!string.IsNullOrWhiteSpace(entry.Place))
                 ImGui.TextWrapped(entry.Place);
@@ -793,7 +795,7 @@ public sealed class CalendarWindow : Window
         var lines = new List<DayLine>();
         foreach (var entry in this.session.Log.Entries)
         {
-            if (entry.Date != date)
+            if (!EventRepeat.FallsOn(entry, date))
                 continue;
             var title = string.IsNullOrWhiteSpace(entry.Place) ? entry.EventText : entry.Place;
             lines.Add(new DayLine(entry.Time, entry.Time is null ? 2 : 1, title, entry.EventText, entry, null, false));

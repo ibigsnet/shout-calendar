@@ -38,7 +38,7 @@ public static class EventAlarm
         var hits = new List<Hit>();
         foreach (var entry in entries)
         {
-            if (entry.Date is not DateOnly date || entry.Time is not TimeOnly time || string.IsNullOrEmpty(entry.Id))
+            if (entry.Time is not TimeOnly time || string.IsNullOrEmpty(entry.Id))
                 continue;
             if (entry.Accepted)
             {
@@ -50,9 +50,12 @@ public static class EventAlarm
                 continue;
             }
 
-            var alarmAt = MinuteOf(date.ToDateTime(time).AddMinutes(-minutesBefore));
-            if (alarmAt == minute)
-                hits.Add(new Hit(entry.Id, entry.Accepted));
+            var eventMoment = minute.AddMinutes(minutesBefore);
+            if (!EventRepeat.FallsOn(entry, DateOnly.FromDateTime(eventMoment)))
+                continue;
+            if (eventMoment.Hour != time.Hour || eventMoment.Minute != time.Minute)
+                continue;
+            hits.Add(new Hit(entry.Id, entry.Accepted));
         }
 
         return hits;

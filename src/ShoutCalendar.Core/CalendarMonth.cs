@@ -33,15 +33,33 @@ public sealed class CalendarMonth
         var byDay = new Dictionary<int, List<CalendarEntry>>();
         foreach (var entry in entries)
         {
-            if (entry.Date is not DateOnly date || date.Year != year || date.Month != month)
-                continue;
-            if (!byDay.TryGetValue(date.Day, out var list))
+            if (entry.Repeat is null)
             {
-                list = new List<CalendarEntry>();
-                byDay[date.Day] = list;
+                if (entry.Date is not DateOnly date || date.Year != year || date.Month != month)
+                    continue;
+                Add(byDay, date.Day, entry);
+                continue;
             }
 
-            list.Add(entry);
+            if (entry.Date is null)
+                continue;
+            var daysInMonth = DateTime.DaysInMonth(year, month);
+            for (var dayNumber = 1; dayNumber <= daysInMonth; dayNumber++)
+            {
+                if (EventRepeat.FallsOn(entry, new DateOnly(year, month, dayNumber)))
+                    Add(byDay, dayNumber, entry);
+            }
+        }
+
+        void Add(Dictionary<int, List<CalendarEntry>> days, int dayNumber, CalendarEntry item)
+        {
+            if (!days.TryGetValue(dayNumber, out var list))
+            {
+                list = new List<CalendarEntry>();
+                days[dayNumber] = list;
+            }
+
+            list.Add(item);
         }
 
         var first = new DateOnly(year, month, 1);

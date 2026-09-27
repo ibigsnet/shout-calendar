@@ -217,4 +217,51 @@ public class HarvestTests
         Assert.Contains("plot 26", entry.Place);
         Assert.Null(entry.Time);
     }
+
+    [Fact]
+    public void TuesdayAfterNextSkipsTheComingTuesday()
+    {
+        var sunday = new DateTimeOffset(2026, 9, 27, 18, 0, 0, TimeSpan.Zero);
+        var entry = ShoutHarvest.TryHarvest(
+            "The Tuesday after next, doing an event on our home plot, W3P26 ~6:00am",
+            ShoutHarvest.FreeCompanyChannel,
+            sunday);
+
+        Assert.NotNull(entry);
+        Assert.Equal(new DateOnly(2026, 10, 6), entry.Date);
+        Assert.Equal(new TimeOnly(6, 0), entry.Time);
+        Assert.Equal(3, entry.Ward);
+        Assert.Contains("plot 26", entry.Place);
+    }
+
+    [Fact]
+    public void EveryOtherTuesdayLandsOnAlternateTuesdays()
+    {
+        var sunday = new DateTimeOffset(2026, 9, 27, 18, 0, 0, TimeSpan.Zero);
+        var entry = ShoutHarvest.TryHarvest(
+            "every other Tuesday at 6pm on W3P26",
+            ShoutHarvest.ShoutChannel,
+            sunday);
+
+        Assert.NotNull(entry);
+        Assert.Equal(new DateOnly(2026, 9, 29), entry.Date);
+        Assert.True(EventRepeat.FallsOn(entry, new DateOnly(2026, 10, 13)));
+        Assert.False(EventRepeat.FallsOn(entry, new DateOnly(2026, 10, 6)));
+    }
+
+    [Fact]
+    public void FirstAndLastWednesdayRepeatThroughTheMonth()
+    {
+        var sunday = new DateTimeOffset(2026, 9, 27, 18, 0, 0, TimeSpan.Zero);
+        var entry = ShoutHarvest.TryHarvest(
+            "every 1st and last Wednesday at 8pm in the Goblet",
+            ShoutHarvest.ShoutChannel,
+            sunday,
+            new PlaceCatalog(["The Goblet"]));
+
+        Assert.NotNull(entry);
+        Assert.True(EventRepeat.FallsOn(entry, new DateOnly(2026, 10, 7)));
+        Assert.True(EventRepeat.FallsOn(entry, new DateOnly(2026, 10, 28)));
+        Assert.False(EventRepeat.FallsOn(entry, new DateOnly(2026, 10, 14)));
+    }
 }

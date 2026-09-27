@@ -98,6 +98,8 @@ public sealed class StoredEvent
 
     public string DetectedAt { get; set; } = "";
 
+    public string? Repeat { get; set; }
+
     public static StoredEvent From(CalendarEntry entry)
     {
         return new StoredEvent
@@ -115,6 +117,7 @@ public sealed class StoredEvent
             DetectedAt = entry.DetectedAt == default
                 ? ""
                 : entry.DetectedAt.ToString("o", CultureInfo.InvariantCulture),
+            Repeat = entry.Repeat?.Store(),
         };
     }
 
@@ -156,7 +159,8 @@ public sealed class StoredEvent
             string.IsNullOrEmpty(stored.Id) ? Guid.NewGuid().ToString("N") : stored.Id,
             DateTimeOffset.TryParse(stored.DetectedAt, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var detectedAt)
                 ? detectedAt
-                : default);
+                : default,
+            EventRepeat.Parse(stored.Repeat));
         return true;
     }
 }
