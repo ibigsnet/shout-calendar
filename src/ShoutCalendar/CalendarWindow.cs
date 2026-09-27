@@ -567,14 +567,17 @@ public sealed class CalendarWindow : Window
         ImGui.InputText($"Location##edit-{entry.Id}", ref this.editPlace, 200);
         if (!ImGui.Button($"Save##edit-{entry.Id}"))
             return;
-        if (this.session.Log.Revise(entry.Id, this.editNote, this.editDate, this.editTime, this.editPlace, DateTimeOffset.UtcNow, this.session.Places, this.session.Channels))
-        {
-            var updated = this.session.Log.Entries.First(item => item.Id == entry.Id);
-            if (updated.Date is DateOnly moved)
-                this.session.Show(moved);
-            this.BeginEdit(updated);
-            this.save();
-        }
+        if (!this.session.Log.Revise(entry.Id, this.editNote, this.editDate, this.editTime, this.editPlace, DateTimeOffset.UtcNow, this.session.Places, this.session.Channels))
+            return;
+        if (!entry.Accepted)
+            this.session.Log.Accept(entry.Id);
+        var updated = this.session.Log.Entries.First(item => item.Id == entry.Id);
+        if (updated.Date is DateOnly moved)
+            this.session.Show(moved);
+        if (this.selectedLine is DayLine selected && selected.Entry?.Id == updated.Id)
+            this.selectedLine = selected with { Entry = updated };
+        this.BeginEdit(updated);
+        this.save();
     }
 
     private void SelectLine(DayLine line)
