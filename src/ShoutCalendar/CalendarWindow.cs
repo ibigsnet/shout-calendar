@@ -257,7 +257,9 @@ public sealed class CalendarWindow : Window
             this.save();
         }
 
-        ImGui.TextWrapped("Off: a line is kept when it has a date, a time, or a place. On: it needs two of those three, so a place name by itself is skipped. Today, tonight, tomorrow, and a weekday such as next Tuesday count as a date.");
+        ImGui.TextWrapped("Off: a line is kept when it has a date, a time, or a place.");
+        ImGui.TextWrapped("On: it needs two of those three, so a place name by itself is skipped.");
+        ImGui.TextWrapped("Today, tonight, tomorrow, and a weekday such as next Tuesday count as a date.");
     }
 
     private void DrawAlarms()
