@@ -525,11 +525,17 @@ public sealed class CalendarWindow : Window
         }
 
         var dayId = $"day-{this.session.Year}-{this.session.Month}-{day}";
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        var isToday = new DateOnly(this.session.Year, this.session.Month, day) == today;
+        if (isToday)
+            ImGui.PushStyleColor(ImGuiCol.ChildBg, new Vector4(0.34f, 0.40f, 0.48f, 1f));
         ImGui.BeginChild(dayId, new Vector2(side, side), true);
         ImGui.TextUnformatted(day.ToString());
         foreach (var entry in cell.Entries)
             this.DrawEvent(entry, now);
         ImGui.EndChild();
+        if (isToday)
+            ImGui.PopStyleColor();
     }
 
     private void DrawEvent(CalendarEntry entry, DateTimeOffset now)
