@@ -530,7 +530,7 @@ public sealed class CalendarWindow : Window
         _ => (this.session.CrystalColor, new Vector4(1f, 1f, 1f, 1f)),
     };
 
-    private readonly record struct DayLine(TimeOnly? Time, int Rank, string Title, string Detail, CalendarEntry? Entry, ResetTone? Tone, bool Span);
+    private readonly record struct DayLine(TimeOnly? Time, int Rank, string Title, string Detail, CalendarEntry? Entry, ResetTone? Tone, bool Span, IReadOnlyList<DayLine>? Members = null);
 
     private void DrawUndated(DateTimeOffset now)
     {
@@ -612,15 +612,23 @@ public sealed class CalendarWindow : Window
             return;
         }
 
-        var (resetFill, resetInk) = this.Ink(line);
-        ImGui.PushStyleColor(ImGuiCol.Text, resetInk);
-        ImGui.TextUnformatted(line.Time is TimeOnly time ? $"{time:HH:mm}  {line.Title}" : line.Title);
-        ImGui.PopStyleColor();
-        _ = resetFill;
-        if (!string.IsNullOrWhiteSpace(line.Detail))
-            ImGui.TextWrapped(line.Detail);
+        var members = line.Members is { Count: > 0 } ? line.Members : [line];
+        var clock = line.Time is TimeOnly time ? $"{time:HH:mm}  " : "";
+        ImGui.TextUnformatted(clock + line.Title);
+        foreach (var member in members)
+        {
+            ImGui.Separator();
+            var (resetFill, resetInk) = this.Ink(member);
+            ImGui.PushStyleColor(ImGuiCol.Text, resetInk);
+            ImGui.TextUnformatted(member.Title);
+            ImGui.PopStyleColor();
+            _ = resetFill;
+            if (!string.IsNullOrWhiteSpace(member.Detail))
+                ImGui.TextWrapped(member.Detail);
+            this.DrawPins(member.Detail, member.Title);
+        }
+
         ImGui.TextUnformatted("This reset time is fixed.");
-        this.DrawPins(line.Detail, line.Title);
     }
 
     private void DrawPins(string text, string? chip)
@@ -676,7 +684,7 @@ public sealed class CalendarWindow : Window
         ImGui.BeginChild(dayId, new Vector2(side, side), true);
         if (ImGui.SmallButton($"{day}##open-{day}"))
             this.folderDay = day;
-        var lines = this.LinesFor(date);
+        var lines = this.GlanceFor(date);
         var spanCount = lines.Count(line => line.Span);
         if (spanCount > 0)
             ImGui.Dummy(new Vector2(1f, spanCount * this.GlanceBar()));
@@ -757,6 +765,12 @@ public sealed class CalendarWindow : Window
             ImGui.PopStyleColor();
             if (!string.IsNullOrWhiteSpace(line.Detail))
                 ImGui.TextWrapped(line.Detail);
+            if (line.Entry is null)
+            {
+                this.DrawPins(line.Detail, line.Title);
+                continue;
+            }
+
             if (line.Entry is not CalendarEntry entry)
                 continue;
             if (ImGui.SmallButton($"Edit##folder-{entry.Id}"))
@@ -811,6 +825,48 @@ public sealed class CalendarWindow : Window
             return string.Compare(left.Title, right.Title, StringComparison.OrdinalIgnoreCase);
         });
         return lines;
+    }
+
+    private List<DayLine> GlanceFor(DateOnly date)
+    {
+        var lines = this.LinesFor(date);
+        var glance = new List<DayLine>();
+        glance.AddRange(lines.Where(line => line.Entry is not null || line.Span));
+        foreach (var group in lines.Where(line => line.Entry is null && !line.Span).GroupBy(line => line.Time))
+        {
+            var items = group.OrderBy(line => line.Title, StringComparer.OrdinalIgnoreCase).ToList();
+            if (items.Count == 1)
+            {
+                glance.Add(items[0]);
+                continue;
+            }
+
+            glance.Add(new DayLine(
+                group.Key,
+                1,
+                string.Join(", ", items.Select(line => line.Title)),
+                "",
+                null,
+                items[0].Tone,
+                false,
+                items));
+        }
+
+        glance.Sort(static (left, right) =>
+        {
+            var rank = left.Rank.CompareTo(right.Rank);
+            if (rank != 0)
+                return rank;
+            if (left.Time is TimeOnly leftTime && right.Time is TimeOnly rightTime)
+            {
+                var clock = leftTime.CompareTo(rightTime);
+                if (clock != 0)
+                    return clock;
+            }
+
+            return string.Compare(left.Title, right.Title, StringComparison.OrdinalIgnoreCase);
+        });
+        return glance;
     }
 
     private (Vector4 Fill, Vector4 Ink) Ink(DayLine line)

@@ -137,8 +137,39 @@ public static class GameSchedule
         new("The Ultimate Weapon", "", 0f, 0f, false, "The Ultimate Weapon"),
     ];
 
+    private static readonly Dictionary<string, GuidePin[]> Pins = new(StringComparer.Ordinal)
+    {
+        ["Nocturne"] = NocturnePins,
+        ["Cactpot"] =
+        [
+            new("Jumbo Cactpot Broker", "The Gold Saucer", 8.6f, 5.9f, true, "Hitting the Cactpot"),
+        ],
+        ["Tails"] =
+        [
+            new("Khloe Aliapoh", "Idyllshire", 5.7f, 6.1f, true, null),
+            new("Unctuous Adventurer", "Idyllshire", 7.0f, 5.9f, true, "Keeping Up with the Aliapohs"),
+        ],
+        ["Fashion"] =
+        [
+            new("Masked Rose", "The Gold Saucer", 7.2f, 7.4f, true, "Passion for Fashion"),
+        ],
+        ["Judge"] =
+        [
+            new("Masked Rose", "The Gold Saucer", 7.2f, 7.4f, true, null),
+        ],
+        ["Faux"] =
+        [
+            new("Faux Commander", "Idyllshire", 5.7f, 6.1f, true, "Fantastic Mr. Faux"),
+        ],
+        ["Carnivale"] =
+        [
+            new("Maudlin Latool Ja", "Ul'dah - Steps of Thal", 12.5f, 13.0f, true, "The Real Folk Blues"),
+            new("Celestium Attendant", "Ul'dah - Steps of Thal", 11.5f, 13.2f, true, null),
+        ],
+    };
+
     public static IReadOnlyList<GuidePin> Guide(string? chip) =>
-        chip == "Nocturne" ? NocturnePins : [];
+        chip is not null && Pins.TryGetValue(chip, out var pins) ? pins : [];
 
     public static bool IsKnown(string? id) => Items.Any(item => item.Id == id);
 
