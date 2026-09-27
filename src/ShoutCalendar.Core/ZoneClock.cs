@@ -91,12 +91,25 @@ public static class ZoneClock
         {
             if (!Converts(wall.Label))
                 continue;
-            var moved = Move(entry.Date ?? storedDate, wall.Time, wall.Label, calendarZone);
+            var moved = Move(storedDate, wall.Time, wall.Label, calendarZone);
+            if (AlreadyShown(entry, storedDate, moved))
+                return new Face(storedDate, entry.Time ?? moved.Time);
+            if (storedDate > DateOnly.MinValue)
+            {
+                var prior = Move(storedDate.AddDays(-1), wall.Time, wall.Label, calendarZone);
+                if (AlreadyShown(entry, storedDate, prior))
+                    return new Face(storedDate, entry.Time ?? prior.Time);
+            }
+
             return new Face(moved.Date, moved.Time);
         }
 
         return new Face(storedDate, entry.Time);
     }
+
+    /// <summary>Harvest already stored this converted instant, so the label must not be applied again.</summary>
+    private static bool AlreadyShown(CalendarEntry entry, DateOnly storedDate, (DateOnly Date, TimeOnly Time) moved) =>
+        entry.Time is TimeOnly stored && moved.Date == storedDate && moved.Time == stored;
 
     private static string? LabelAfter(string text, Match clock)
     {

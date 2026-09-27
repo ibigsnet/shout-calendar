@@ -585,6 +585,15 @@ public class HarvestTests
         Assert.NotNull(late);
         Assert.Equal(new TimeOnly(2, 30), late.Time);
         Assert.Equal(new DateOnly(2026, 9, 28), late.Date);
+        var lateFace = ZoneClock.Shown(late, eastern);
+        Assert.Equal(new DateOnly(2026, 9, 28), lateFace.Date);
+        Assert.Equal(new TimeOnly(2, 30), lateFace.Time);
+        late = late with { Id = "late", Accepted = true };
+        var lateMorning = new DateTime(2026, 9, 28, 2, 30, 0);
+        var lateHit = Assert.Single(EventAlarm.Due([late], lateMorning, lateMorning.AddMinutes(-1), true, false, 0, eastern));
+        Assert.Equal("late", lateHit.Id);
+        var dayAfter = new DateTime(2026, 9, 29, 2, 30, 0);
+        Assert.Empty(EventAlarm.Due([late], dayAfter, dayAfter.AddMinutes(-1), true, false, 0, eastern));
 
         var plain = ShoutHarvest.TryHarvest("Open at 3pm ward 14 plot 8", ShoutHarvest.ShoutChannel, when, places, aggressive: true, zone: eastern);
         Assert.NotNull(plain);
