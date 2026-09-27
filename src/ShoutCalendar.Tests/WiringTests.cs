@@ -30,7 +30,8 @@ public class WiringTests
         Assert.Contains("BeginTabItem(\"Resets\")", window, StringComparison.Ordinal);
         Assert.Contains("BeginTabItem(\"Settings\")", window, StringComparison.Ordinal);
         Assert.Contains("BeginTabItem(\"Colors\")", window, StringComparison.Ordinal);
-        Assert.Contains("day-folder", window, StringComparison.Ordinal);
+        Assert.Contains("###day-folder", window, StringComparison.Ordinal);
+        Assert.Contains("Pending alerts show below.", window, StringComparison.Ordinal);
         Assert.Contains("PickerHueWheel", window, StringComparison.Ordinal);
         Assert.Contains("Alarm resets", window, StringComparison.Ordinal);
         Assert.Contains("Test accepted", window, StringComparison.Ordinal);

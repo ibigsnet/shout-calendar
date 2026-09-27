@@ -108,6 +108,8 @@ public sealed class CalendarWindow : Window
         this.DrawWrappingButton("Clear all", rowRight, ref continued, () => this.prompt.Ask(ClearTarget.All));
         this.DrawWrappingButton("Clear accepted", rowRight, ref continued, () => this.prompt.Ask(ClearTarget.Accepted));
         this.DrawWrappingButton("Clear unaccepted", rowRight, ref continued, () => this.prompt.Ask(ClearTarget.Unaccepted));
+        ImGui.Separator();
+        ImGui.TextWrapped("Pending alerts show below.");
 
         foreach (var entry in this.session.Log.Entries.Where(entry => !entry.Accepted).ToList())
         {
@@ -432,6 +434,7 @@ public sealed class CalendarWindow : Window
             this.DrawDay(month.Cells[index], side);
         }
 
+        this.DrawSchedule(month, grid, side, gap);
         ImGui.SetCursorScreenPos(grid + new Vector2(0, rows * (side + gap)));
         ImGui.Dummy(new Vector2(1f, 1f));
         this.DrawUndated(now);
@@ -449,30 +452,30 @@ public sealed class CalendarWindow : Window
         if (marks.Count == 0)
             return;
 
-        var lanes = GameSchedule.Lanes(marks);
+        var spans = marks.Where(mark => mark.StartDate != mark.EndDate).ToList();
+        if (spans.Count == 0)
+            return;
+
+        var lanes = GameSchedule.Lanes(spans);
         var draw = ImGui.GetWindowDrawList();
-        const float bar = 16f;
-        foreach (var mark in marks)
+        var style = ImGui.GetStyle();
+        var top = style.WindowPadding.Y + ImGui.GetFrameHeight() + style.ItemSpacing.Y;
+        const float bar = 10f;
+        foreach (var mark in spans)
         {
             var lane = lanes[mark.Key];
-            var (fill, ink) = Tone(mark.Tone);
-            var label = mark.StartDate == mark.EndDate
-                ? $"{mark.Chip} {mark.LocalStart:HH:mm}"
-                : mark.Chip;
-            var when = mark.StartDate == mark.EndDate
-                ? mark.LocalStart.ToString("ddd d MMM HH:mm")
-                : $"{mark.LocalStart:ddd d MMM HH:mm} – {mark.LocalEnd:ddd d MMM HH:mm}";
+            var (fill, _) = this.Tone(mark.Tone);
+            var when = $"{mark.LocalStart:ddd d MMM HH:mm} – {mark.LocalEnd:ddd d MMM HH:mm}";
             foreach (var segment in GameSchedule.Segments(month, mark.StartDate, mark.EndDate))
             {
                 var x1 = grid.X + (segment.FirstColumn * (side + gap)) + 4f;
                 var x2 = grid.X + (segment.LastColumn * (side + gap)) + side - 4f;
-                var y2 = grid.Y + (segment.Row * (side + gap)) + side - 4f - (lane * (bar + 2f));
-                var min = new Vector2(x1, y2 - bar);
-                var max = new Vector2(x2, y2);
+                var y1 = grid.Y + (segment.Row * (side + gap)) + top + (lane * (bar + 2f));
+                var min = new Vector2(x1, y1);
+                var max = new Vector2(x2, y1 + bar);
                 draw.AddRectFilled(min, max, ImGui.ColorConvertFloat4ToU32(fill));
                 if (mark.Tone == ResetTone.Event)
                     draw.AddRect(min, max, ImGui.ColorConvertFloat4ToU32(new Vector4(0.85f, 0.72f, 0.28f, 1f)));
-                draw.AddText(min + new Vector2(4f, 1f), ImGui.ColorConvertFloat4ToU32(ink), label);
                 if (ImGui.IsMouseHoveringRect(min, max))
                     ImGui.SetTooltip($"{mark.Name}\n{when}\n{mark.Detail}");
             }
@@ -486,7 +489,7 @@ public sealed class CalendarWindow : Window
         _ => (this.session.CrystalColor, new Vector4(1f, 1f, 1f, 1f)),
     };
 
-    private readonly record struct DayLine(TimeOnly? Time, int Rank, string Title, string Detail, CalendarEntry? Entry, ResetTone? Tone);
+    private readonly record struct DayLine(TimeOnly? Time, int Rank, string Title, string Detail, CalendarEntry? Entry, ResetTone? Tone, bool Span);
 
     private void DrawUndated(DateTimeOffset now)
     {
@@ -547,31 +550,38 @@ public sealed class CalendarWindow : Window
         if (ImGui.SmallButton($"{day}##open-{day}"))
             this.folderDay = day;
         var lines = this.LinesFor(date);
+        var spanCount = lines.Count(line => line.Span);
+        if (spanCount > 0)
+            ImGui.Dummy(new Vector2(1f, spanCount * 12f));
         var shown = 0;
-        foreach (var line in lines)
+        foreach (var line in lines.Where(line => !line.Span))
         {
-            if (ImGui.GetCursorPosY() + ImGui.GetTextLineHeightWithSpacing() > side - 22f)
+            if (ImGui.GetCursorPosY() + 16f > side - 6f)
                 break;
-            this.DrawCompactLine(line);
+            this.DrawColorBlock(line);
             shown++;
         }
 
-        if (shown < lines.Count && ImGui.SmallButton($"+{lines.Count - shown}##more-{day}"))
+        var hidden = lines.Count(line => !line.Span) - shown;
+        if (hidden > 0 && ImGui.SmallButton($"+{hidden}##more-{day}"))
             this.folderDay = day;
         ImGui.EndChild();
         if (isToday)
             ImGui.PopStyleColor();
     }
 
-    private void DrawCompactLine(DayLine line)
+    private void DrawColorBlock(DayLine line)
     {
-        var (fill, ink) = this.Ink(line);
-        ImGui.PushStyleColor(ImGuiCol.Text, ink);
-        ImGui.TextUnformatted(line.Title);
-        ImGui.PopStyleColor();
+        var (fill, _) = this.Ink(line);
+        var width = MathF.Max(8f, ImGui.GetContentRegionAvail().X);
+        var pos = ImGui.GetCursorScreenPos();
+        ImGui.GetWindowDrawList().AddRectFilled(pos, pos + new Vector2(width, 12f), ImGui.ColorConvertFloat4ToU32(fill));
+        ImGui.Dummy(new Vector2(width, 14f));
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip($"{line.Title}\n{line.Detail}");
-        _ = fill;
+        {
+            var when = line.Time is TimeOnly time ? $"{time:HH:mm} " : "";
+            ImGui.SetTooltip($"{when}{line.Title}\n{line.Detail}");
+        }
     }
 
     private void DrawDayFolder()
@@ -588,7 +598,7 @@ public sealed class CalendarWindow : Window
         var open = true;
         var date = new DateOnly(this.session.Year, this.session.Month, day);
         ImGui.SetNextWindowSize(new Vector2(520, 560), ImGuiCond.FirstUseEver);
-        if (!ImGui.Begin($"{date:dddd d MMMM}##day-folder", ref open))
+        if (!ImGui.Begin($"{date:dddd d MMMM}###day-folder", ref open))
         {
             ImGui.End();
             return;
@@ -633,7 +643,7 @@ public sealed class CalendarWindow : Window
             if (entry.Date != date)
                 continue;
             var title = string.IsNullOrWhiteSpace(entry.Place) ? entry.EventText : entry.Place;
-            lines.Add(new DayLine(entry.Time, entry.Time is null ? 2 : 1, title, entry.EventText, entry, null));
+            lines.Add(new DayLine(entry.Time, entry.Time is null ? 2 : 1, title, entry.EventText, entry, null, false));
         }
 
         foreach (var mark in GameSchedule.InMonth(date.Year, date.Month, TimeZoneInfo.Local, this.session.CactpotRegion, this.session.Resets))
@@ -645,8 +655,9 @@ public sealed class CalendarWindow : Window
                 time = TimeOnly.FromDateTime(mark.LocalStart);
             else if (date == mark.EndDate)
                 time = TimeOnly.FromDateTime(mark.LocalEnd);
-            var title = time is TimeOnly clock ? $"{mark.Chip}" : mark.Chip;
-            lines.Add(new DayLine(time, time is null ? 0 : 1, title, mark.Name + ". " + mark.Detail, null, mark.Tone));
+            var span = mark.StartDate != mark.EndDate;
+            var title = time is TimeOnly ? mark.Chip : mark.Chip;
+            lines.Add(new DayLine(time, span ? 0 : 1, title, mark.Name + ". " + mark.Detail, null, mark.Tone, span));
         }
 
         lines.Sort(static (left, right) =>

@@ -22,10 +22,10 @@ public sealed class CalendarSession
 
     public string? HousingHint { get; set; }
 
-    public int UnacceptedHoldDays { get; set; } = 14;
+    public int UnacceptedHoldDays { get; set; } = 1;
 
     /// <summary>When set, a line is kept only if two of date, time, and place are present.</summary>
-    public bool AggressiveFilter { get; set; }
+    public bool AggressiveFilter { get; set; } = true;
 
     public bool AlarmAccepted { get; set; } = true;
 
@@ -57,7 +57,7 @@ public sealed class CalendarSession
 
     public Vector4 EventColor { get; set; } = new(0.10f, 0.10f, 0.12f, 0.95f);
 
-    public int AlarmMinutesBefore { get; set; }
+    public int AlarmMinutesBefore { get; set; } = 15;
 
     public HashSet<string> Resets { get; } = new(GameSchedule.DefaultIds);
 

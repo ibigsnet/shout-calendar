@@ -17,10 +17,10 @@ public sealed class PluginConfig : IPluginConfiguration
     /// <summary>Null means the install defaults in <see cref="ChatChannels.DefaultIds"/>.</summary>
     public List<int>? WatchedChannels { get; set; }
 
-    public int UnacceptedHoldDays { get; set; } = 14;
+    public int UnacceptedHoldDays { get; set; } = 1;
 
     /// <summary>When set, a new line is kept only if two of date, time, and place are present.</summary>
-    public bool AggressiveFilter { get; set; }
+    public bool AggressiveFilter { get; set; } = true;
 
     public bool AlarmAccepted { get; set; } = true;
 
@@ -52,7 +52,7 @@ public sealed class PluginConfig : IPluginConfiguration
 
     public Vector4 EventColor { get; set; } = new(0.10f, 0.10f, 0.12f, 0.95f);
 
-    public int AlarmMinutesBefore { get; set; }
+    public int AlarmMinutesBefore { get; set; } = 15;
 
     /// <summary>Null means <see cref="GameSchedule.DefaultIds"/>.</summary>
     public List<string>? EnabledResets { get; set; }

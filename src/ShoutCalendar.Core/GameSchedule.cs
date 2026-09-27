@@ -89,7 +89,7 @@ public static class GameSchedule
     [
         Item(Cactpot, "Jumbo Cactpot", "Cactpot", "Weekly Gold Saucer drawing. Up to three tickets. The early bird bonus lasts one hour after the draw. The clock follows the data-center region.", ResetTone.Cactus, true, GroupCactpot, ScheduleClock.Cactpot),
         Item(Weekly, "Weekly reset", "Weekly", "Tuesday 08:00 UTC. Tomestone cap, plus the weekly rows in this list.", ResetTone.Crystal, true, GroupWeekly, ScheduleClock.WeeklyTuesday),
-        Item(Tails, "Wondrous Tails", "Tails", "Next journal from Khloe Aliapoh in Idyllshire (5.7, 6.1). Same Tuesday 08:00 UTC as the weekly reset. A book can be held for two weeks from the Tuesday it was issued. That reset is the earliest a new book is available, after the previous one is turned in or has expired.", ResetTone.Crystal, true, GroupWeekly, ScheduleClock.WeeklyTuesday),
+        Item(Tails, "Wondrous Tails", "Tails", "Next journal from Khloe Aliapoh in Idyllshire (5.7, 6.1). Same Tuesday 08:00 UTC as the weekly reset. A book can be held for two weeks from the Tuesday it was issued. That reset is the earliest a new book is available, after the previous one is turned in or has expired.", ResetTone.Crystal, false, GroupWeekly, ScheduleClock.WeeklyTuesday),
         Item(Fashion, "Fashion Report theme", "Fashion", "New theme and hints from the Masked Rose at the Tuesday weekly reset. Judging opens on Friday.", ResetTone.Crystal, false, GroupWeekly, ScheduleClock.WeeklyTuesday),
         Item(FashionJudging, "Fashion Report judging", "Judge", "Judging opens Friday 08:00 UTC. Turn the report in before the next weekly reset.", ResetTone.Crystal, false, GroupWeekly, ScheduleClock.FridayMorning),
         Item(Deliveries, "Custom deliveries", "Deliveries", "Twelve turn-ins per week, six per client. Tuesday 08:00 UTC.", ResetTone.Crystal, false, GroupWeekly, ScheduleClock.WeeklyTuesday),
@@ -117,16 +117,11 @@ public static class GameSchedule
         string group,
         ScheduleClock clock) => new(id, name, chip, detail, tone, defaultOn, group, clock);
 
-    private static readonly string[] PreviousDefaults = [Cactpot, Weekly, Nocturne];
-
     public static IEnumerable<string> MergeSaved(IEnumerable<string>? saved)
     {
         if (saved is null)
             return DefaultIds;
-        var chosen = saved.Where(IsKnown).ToHashSet(StringComparer.Ordinal);
-        if (chosen.SetEquals(PreviousDefaults))
-            chosen.Add(Tails);
-        return chosen;
+        return saved.Where(IsKnown);
     }
 
     public static IReadOnlyList<string> DefaultIds { get; } = Items.Where(item => item.DefaultOn).Select(item => item.Id).ToArray();

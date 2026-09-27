@@ -63,12 +63,13 @@ public class ScheduleTests
     }
 
     [Fact]
-    public void AnOldDefaultListGainsWondrousTails()
+    public void ASavedResetListIsKept()
     {
         var saved = new[] { GameSchedule.Cactpot, GameSchedule.Weekly, GameSchedule.Nocturne };
         var merged = GameSchedule.MergeSaved(saved).ToHashSet(StringComparer.Ordinal);
 
-        Assert.Contains(GameSchedule.Tails, merged);
+        Assert.DoesNotContain(GameSchedule.Tails, merged);
+        Assert.Contains(GameSchedule.Nocturne, merged);
     }
 
     [Fact]
