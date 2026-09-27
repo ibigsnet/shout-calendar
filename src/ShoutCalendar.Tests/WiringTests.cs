@@ -24,6 +24,7 @@ public class WiringTests
         Assert.Contains("Clear all", window, StringComparison.Ordinal);
         Assert.Contains("Clear accepted", window, StringComparison.Ordinal);
         Assert.Contains("Clear unaccepted", window, StringComparison.Ordinal);
+        Assert.Contains("Aggressive filter (2 of date, time, place)", window, StringComparison.Ordinal);
         Assert.Contains("!entry.Accepted", window, StringComparison.Ordinal);
         Assert.Contains("AddRectFilled", window, StringComparison.Ordinal);
     }

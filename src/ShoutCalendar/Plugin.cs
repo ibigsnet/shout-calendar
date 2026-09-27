@@ -45,6 +45,7 @@ public sealed class Plugin : IDalamudPlugin
 
         this.session.UseChannels(this.config.WatchedChannels);
         this.session.UnacceptedHoldDays = this.config.UnacceptedHoldDays < 1 ? 14 : this.config.UnacceptedHoldDays;
+        this.session.AggressiveFilter = this.config.AggressiveFilter;
         this.session.Log.Restore(this.config.ToEntries());
         if (this.session.Log.ExpireUnaccepted(DateTimeOffset.UtcNow, this.session.UnacceptedHoldDays) > 0)
             this.Save();
@@ -96,7 +97,9 @@ public sealed class Plugin : IDalamudPlugin
         this.window.IsOpen = true;
         ChatGui.Print(added
             ? "Shout Calendar kept that as a pending shout."
-            : "Shout Calendar did not keep that. It needs a clock time and a place.");
+            : this.session.AggressiveFilter
+                ? "Shout Calendar did not keep that. Aggressive filter needs two of a date, a time, and a place."
+                : "Shout Calendar did not keep that. It needs a time or a place.");
     }
 
     private void OpenMain()
@@ -141,6 +144,7 @@ public sealed class Plugin : IDalamudPlugin
             this.config.Add(entry);
         this.config.WatchedChannels = this.session.Channels.Order().ToList();
         this.config.UnacceptedHoldDays = this.session.UnacceptedHoldDays < 1 ? 14 : this.session.UnacceptedHoldDays;
+        this.config.AggressiveFilter = this.session.AggressiveFilter;
         PluginInterface.SavePluginConfig(this.config);
     }
 

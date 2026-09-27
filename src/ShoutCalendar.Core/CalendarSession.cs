@@ -22,6 +22,9 @@ public sealed class CalendarSession
 
     public int UnacceptedHoldDays { get; set; } = 14;
 
+    /// <summary>When set, a line is kept only if two of date, time, and place are present.</summary>
+    public bool AggressiveFilter { get; set; }
+
     public void UseChannels(IEnumerable<int>? saved)
     {
         this.Channels.Clear();
@@ -64,7 +67,14 @@ public sealed class CalendarSession
 
     public bool TryAddShout(string? text, int channel, DateTimeOffset shoutTimestamp, string? sender = null)
     {
-        var detected = ShoutHarvest.TryHarvest(text, channel, shoutTimestamp, this.Places, this.Channels, this.HousingHint);
+        var detected = ShoutHarvest.TryHarvest(
+            text,
+            channel,
+            shoutTimestamp,
+            this.Places,
+            this.Channels,
+            this.HousingHint,
+            this.AggressiveFilter);
         if (detected is null)
             return false;
         return this.Log.Add(detected with { Sender = sender?.Trim() ?? "" });

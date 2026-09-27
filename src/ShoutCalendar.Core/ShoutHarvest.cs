@@ -49,7 +49,8 @@ public static class ShoutHarvest
         DateTimeOffset shoutTimestamp,
         PlaceCatalog? places = null,
         IReadOnlySet<int>? channels = null,
-        string? housingHint = null)
+        string? housingHint = null,
+        bool aggressive = false)
     {
         if (!IsWatched(channel, channels) || string.IsNullOrWhiteSpace(text))
             return null;
@@ -84,10 +85,19 @@ public static class ShoutHarvest
         if (ward is not null && housingHint is not null && !PlaceAlreadyNamesDistrict(placeParts))
             placeParts.Add(housingHint);
 
-        var hasWhen = clocks.Count > 0 || statedDate is not null;
-        var hasWhere = placeParts.Count > 0;
-        if (!hasWhen && !hasWhere)
+        var hasDate = statedDate is not null;
+        var hasTime = clocks.Count > 0;
+        var hasPlace = placeParts.Count > 0;
+        if (aggressive)
+        {
+            var signals = (hasDate ? 1 : 0) + (hasTime ? 1 : 0) + (hasPlace ? 1 : 0);
+            if (signals < 2)
+                return null;
+        }
+        else if (!hasDate && !hasTime && !hasPlace)
+        {
             return null;
+        }
 
         DateOnly? date = statedDate;
         if (date is null && clocks.Count > 0)

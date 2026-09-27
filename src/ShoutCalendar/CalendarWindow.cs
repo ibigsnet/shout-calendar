@@ -48,6 +48,7 @@ public sealed class CalendarWindow : Window
 
         ImGui.TextUnformatted("Pending");
         this.DrawHoldDays();
+        this.DrawAggressiveFilter();
         var rowRight = ImGui.GetCursorScreenPos().X + ImGui.GetContentRegionAvail().X;
         var continued = false;
         this.DrawWrappingButton("Clear all", rowRight, ref continued, () => this.prompt.Ask(ClearTarget.All));
@@ -129,6 +130,15 @@ public sealed class CalendarWindow : Window
         if (days == this.session.UnacceptedHoldDays)
             return;
         this.session.UnacceptedHoldDays = days;
+        this.save();
+    }
+
+    private void DrawAggressiveFilter()
+    {
+        var aggressive = this.session.AggressiveFilter;
+        if (!ImGui.Checkbox("Aggressive filter (2 of date, time, place)##aggressive", ref aggressive))
+            return;
+        this.session.AggressiveFilter = aggressive;
         this.save();
     }
 

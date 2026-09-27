@@ -1,6 +1,6 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -19,8 +19,10 @@ Pending invites are orange, on the left and on the day. Accept takes one off the
 
 Accepted and pending invites are saved across restarts. Hold unaccepted for (days) defaults to 14. Accepted invites stay until you delete them.
 
-/shoutcalendar opens the calendar. /shoutcalendar test checks a line on your machine and does not send chat.</Description>
-    <Changelog>First public build of the month calendar.</Changelog>
+/shoutcalendar opens the calendar. /shoutcalendar test checks a line on your machine and does not send chat.
+
+Aggressive filter, off by default, keeps a message only when two of a date, a time, and a place are present.</Description>
+    <Changelog>Aggressive filter option. Off by default, it ignores a line unless two of a date, a time, and a place are present.</Changelog>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\ShoutCalendar.Core\ShoutCalendar.Core.csproj" />

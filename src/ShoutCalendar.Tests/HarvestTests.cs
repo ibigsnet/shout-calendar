@@ -164,4 +164,41 @@ public class HarvestTests
         Assert.Equal(18, first.Ward);
         Assert.Equal("Faerie", first.Server);
     }
+
+    [Fact]
+    public void APlaceNameAloneStaysUntilTheAggressiveFilter()
+    {
+        var places = new PlaceCatalog(["The Source"]);
+        const string text = "went to the source";
+
+        var kept = ShoutHarvest.TryHarvest(text, ShoutHarvest.ShoutChannel, ShoutAt, places);
+        Assert.NotNull(kept);
+        Assert.Contains("The Source", kept.Place);
+        Assert.Null(kept.Date);
+        Assert.Null(kept.Time);
+
+        Assert.Null(ShoutHarvest.TryHarvest(text, ShoutHarvest.ShoutChannel, ShoutAt, places, aggressive: true));
+    }
+
+    [Fact]
+    public void AggressiveFilterKeepsTwoOfDateTimeAndPlace()
+    {
+        Assert.Null(ShoutHarvest.TryHarvest("starting at 8:00pm", ShoutHarvest.ShoutChannel, ShoutAt, aggressive: true));
+        Assert.Null(ShoutHarvest.TryHarvest("come to ward 13 on Faerie", ShoutHarvest.ShoutChannel, ShoutAt, aggressive: true));
+
+        var datedPlace = ShoutHarvest.TryHarvest("W3 Plot 27 on 10/13/26", ShoutHarvest.ShoutChannel, ShoutAt, aggressive: true);
+        Assert.NotNull(datedPlace);
+        Assert.Equal(new DateOnly(2026, 10, 13), datedPlace.Date);
+        Assert.Null(datedPlace.Time);
+        Assert.Equal(3, datedPlace.Ward);
+
+        var timedPlace = ShoutHarvest.TryHarvest("Maps at 8:00pm ward 13", ShoutHarvest.ShoutChannel, ShoutAt, aggressive: true);
+        Assert.NotNull(timedPlace);
+
+        var datedTime = ShoutHarvest.TryHarvest("tomorrow at 6:30", ShoutHarvest.ShoutChannel, ShoutAt, aggressive: true);
+        Assert.NotNull(datedTime);
+        Assert.Equal(new DateOnly(2026, 9, 27), datedTime.Date);
+        Assert.Equal(new TimeOnly(6, 30), datedTime.Time);
+        Assert.Equal("", datedTime.Place);
+    }
 }

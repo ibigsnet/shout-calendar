@@ -18,6 +18,9 @@ public sealed class PluginConfig : IPluginConfiguration
 
     public int UnacceptedHoldDays { get; set; } = 14;
 
+    /// <summary>When set, a new line is kept only if two of date, time, and place are present.</summary>
+    public bool AggressiveFilter { get; set; }
+
     public IEnumerable<CalendarEntry> ToEntries()
     {
         foreach (var stored in this.Events)
