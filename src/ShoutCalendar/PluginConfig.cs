@@ -31,6 +31,11 @@ public sealed class PluginConfig : IPluginConfiguration
 
     public int AlarmMinutesBefore { get; set; }
 
+    /// <summary>Null means <see cref="GameSchedule.DefaultIds"/>.</summary>
+    public List<string>? EnabledResets { get; set; }
+
+    public string CactpotRegion { get; set; } = "na";
+
     public IEnumerable<CalendarEntry> ToEntries()
     {
         foreach (var stored in this.Events)

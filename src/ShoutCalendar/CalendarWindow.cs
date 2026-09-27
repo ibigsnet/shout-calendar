@@ -50,7 +50,28 @@ public sealed class CalendarWindow : Window
         if (this.session.Log.ExpireUnaccepted(DateTimeOffset.UtcNow, this.session.UnacceptedHoldDays) > 0)
             this.save();
 
-        ImGui.TextUnformatted("Pending");
+        if (ImGui.BeginTabBar("shout-tabs"))
+        {
+            if (ImGui.BeginTabItem("Pending"))
+            {
+                this.DrawPending();
+                ImGui.EndTabItem();
+            }
+
+            if (ImGui.BeginTabItem("Resets"))
+            {
+                this.DrawResets();
+                ImGui.EndTabItem();
+            }
+
+            ImGui.EndTabBar();
+        }
+
+        ImGui.EndChild();
+    }
+
+    private void DrawPending()
+    {
         this.DrawHoldDays();
         this.DrawAggressiveFilter();
         this.DrawAlarms();
@@ -94,8 +115,40 @@ public sealed class CalendarWindow : Window
             if (ImGui.Button($"Delete##{entry.Id}"))
                 this.RemoveEntry(entry.Id);
         }
+    }
 
-        ImGui.EndChild();
+    private void DrawResets()
+    {
+        ImGui.TextWrapped("Crystal blue marks a reset. Cactus green marks the Jumbo Cactpot. The dark bar is a limited event.");
+        var region = GameSchedule.NormalizeRegion(this.session.CactpotRegion);
+        if (ImGui.BeginCombo("Data centers##cactpot-region", GameSchedule.RegionLabel(region)))
+        {
+            foreach (var choice in new[] { GameSchedule.RegionNa, GameSchedule.RegionEu, GameSchedule.RegionJp, GameSchedule.RegionOc })
+            {
+                if (!ImGui.Selectable($"{GameSchedule.RegionLabel(choice)}##region-{choice}", choice == region))
+                    continue;
+                this.session.CactpotRegion = choice;
+                this.save();
+            }
+
+            ImGui.EndCombo();
+        }
+
+        var zone = TimeZoneInfo.Local;
+        var now = DateTimeOffset.UtcNow;
+        foreach (var item in GameSchedule.Items)
+        {
+            var enabled = this.session.Resets.Contains(item.Id);
+            if (ImGui.Checkbox($"{item.Name}##reset-{item.Id}", ref enabled))
+            {
+                this.session.SetReset(item.Id, enabled);
+                this.save();
+            }
+
+            ImGui.TextWrapped(GameSchedule.NextLine(item.Id, now, zone, this.session.CactpotRegion));
+            ImGui.TextWrapped(item.Detail);
+            ImGui.Separator();
+        }
     }
 
     private void DrawWrappingButton(string label, float rowRight, ref bool continued, Action onClick)
@@ -270,11 +323,60 @@ public sealed class CalendarWindow : Window
             this.DrawDay(month.Cells[index], side, now);
         }
 
+        this.DrawSchedule(month, grid, side, gap);
         ImGui.SetCursorScreenPos(grid + new Vector2(0, rows * (side + gap)));
         ImGui.Dummy(new Vector2(1f, 1f));
         this.DrawUndated(now);
         ImGui.EndChild();
     }
+
+    private void DrawSchedule(CalendarMonth month, Vector2 grid, float side, float gap)
+    {
+        var marks = GameSchedule.InMonth(
+            month.Year,
+            month.Month,
+            TimeZoneInfo.Local,
+            this.session.CactpotRegion,
+            this.session.Resets);
+        if (marks.Count == 0)
+            return;
+
+        var lanes = GameSchedule.Lanes(marks);
+        var draw = ImGui.GetWindowDrawList();
+        const float bar = 16f;
+        foreach (var mark in marks)
+        {
+            var lane = lanes[mark.Key];
+            var (fill, ink) = Tone(mark.Tone);
+            var label = mark.StartDate == mark.EndDate
+                ? $"{mark.Chip} {mark.LocalStart:HH:mm}"
+                : mark.Chip;
+            var when = mark.StartDate == mark.EndDate
+                ? mark.LocalStart.ToString("ddd d MMM HH:mm")
+                : $"{mark.LocalStart:ddd d MMM HH:mm} – {mark.LocalEnd:ddd d MMM HH:mm}";
+            foreach (var segment in GameSchedule.Segments(month, mark.StartDate, mark.EndDate))
+            {
+                var x1 = grid.X + (segment.FirstColumn * (side + gap)) + 4f;
+                var x2 = grid.X + (segment.LastColumn * (side + gap)) + side - 4f;
+                var y2 = grid.Y + (segment.Row * (side + gap)) + side - 4f - (lane * (bar + 2f));
+                var min = new Vector2(x1, y2 - bar);
+                var max = new Vector2(x2, y2);
+                draw.AddRectFilled(min, max, ImGui.ColorConvertFloat4ToU32(fill));
+                if (mark.Tone == ResetTone.Event)
+                    draw.AddRect(min, max, ImGui.ColorConvertFloat4ToU32(new Vector4(0.85f, 0.72f, 0.28f, 1f)));
+                draw.AddText(min + new Vector2(4f, 1f), ImGui.ColorConvertFloat4ToU32(ink), label);
+                if (ImGui.IsMouseHoveringRect(min, max))
+                    ImGui.SetTooltip($"{mark.Name}\n{when}\n{mark.Detail}");
+            }
+        }
+    }
+
+    private static (Vector4 Fill, Vector4 Ink) Tone(ResetTone tone) => tone switch
+    {
+        ResetTone.Cactus => (new Vector4(0.55f, 0.78f, 0.22f, 0.95f), new Vector4(0.08f, 0.14f, 0.02f, 1f)),
+        ResetTone.Event => (new Vector4(0.10f, 0.10f, 0.12f, 0.95f), new Vector4(0.96f, 0.96f, 0.96f, 1f)),
+        _ => (new Vector4(0.18f, 0.52f, 0.86f, 0.95f), new Vector4(1f, 1f, 1f, 1f)),
+    };
 
     private void DrawUndated(DateTimeOffset now)
     {

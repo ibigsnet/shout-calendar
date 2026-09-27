@@ -37,6 +37,8 @@ Accepted and pending invites are saved across restarts. **Hold unaccepted for (d
 
 **Alarms** ring a chat sound, `<se.1>` through `<se.16>`, when an accepted event's clock arrives. **Minutes before** is 0 at that clock. **Alarm unaccepted events** is off until checked, and it has its own sound. Test plays the selected sound.
 
+**Resets** is the second tab. Jumbo Cactpot, the weekly reset, and A Nocturne for Heroes start on. Daily reset and Grand Company start off. Cactpot follows the data-center region, defaulting to North America. A limited event draws a bar across its dates. Colors are fixed for now: crystal blue, cactus green, and a dark bar for a limited event.
+
 ## Official plugin list
 
 The official list is a separate review. It is a pull request to [goatcorp/DalamudPluginsD17](https://github.com/goatcorp/DalamudPluginsD17) with a `manifest.toml`, a square `icon.png` (64 to 512 pixels), and a pass through the testing track. That pull request has not been opened.

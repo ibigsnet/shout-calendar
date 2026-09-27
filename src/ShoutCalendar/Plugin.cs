@@ -54,6 +54,8 @@ public sealed class Plugin : IDalamudPlugin
         this.session.AcceptedSound = EventAlarm.ClampSound(this.config.AcceptedSound);
         this.session.UnacceptedSound = EventAlarm.ClampSound(this.config.UnacceptedSound);
         this.session.AlarmMinutesBefore = this.config.AlarmMinutesBefore < 0 ? 0 : this.config.AlarmMinutesBefore;
+        this.session.UseResets(this.config.EnabledResets);
+        this.session.CactpotRegion = GameSchedule.NormalizeRegion(this.config.CactpotRegion);
         this.session.Log.Restore(this.config.ToEntries());
         if (this.session.Log.ExpireUnaccepted(DateTimeOffset.UtcNow, this.session.UnacceptedHoldDays) > 0)
             this.Save();
@@ -207,6 +209,8 @@ public sealed class Plugin : IDalamudPlugin
         this.config.AcceptedSound = EventAlarm.ClampSound(this.session.AcceptedSound);
         this.config.UnacceptedSound = EventAlarm.ClampSound(this.session.UnacceptedSound);
         this.config.AlarmMinutesBefore = this.session.AlarmMinutesBefore < 0 ? 0 : this.session.AlarmMinutesBefore;
+        this.config.EnabledResets = this.session.Resets.Order().ToList();
+        this.config.CactpotRegion = GameSchedule.NormalizeRegion(this.session.CactpotRegion);
         PluginInterface.SavePluginConfig(this.config);
     }
 

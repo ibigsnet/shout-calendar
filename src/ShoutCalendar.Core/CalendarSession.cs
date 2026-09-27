@@ -35,6 +35,30 @@ public sealed class CalendarSession
 
     public int AlarmMinutesBefore { get; set; }
 
+    public HashSet<string> Resets { get; } = new(GameSchedule.DefaultIds);
+
+    public string CactpotRegion { get; set; } = GameSchedule.RegionNa;
+
+    public void UseResets(IEnumerable<string>? saved)
+    {
+        this.Resets.Clear();
+        foreach (var id in saved ?? GameSchedule.DefaultIds)
+        {
+            if (GameSchedule.IsKnown(id))
+                this.Resets.Add(id);
+        }
+    }
+
+    public void SetReset(string id, bool enabled)
+    {
+        if (!GameSchedule.IsKnown(id))
+            return;
+        if (enabled)
+            this.Resets.Add(id);
+        else
+            this.Resets.Remove(id);
+    }
+
     public void UseChannels(IEnumerable<int>? saved)
     {
         this.Channels.Clear();

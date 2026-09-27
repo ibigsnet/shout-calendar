@@ -27,6 +27,11 @@ public class WiringTests
         Assert.Contains("Aggressive filter (2 of date, time, place)", window, StringComparison.Ordinal);
         Assert.Contains("Alarm accepted events", window, StringComparison.Ordinal);
         Assert.Contains("Alarm unaccepted events", window, StringComparison.Ordinal);
+        Assert.Contains("BeginTabItem(\"Resets\")", window, StringComparison.Ordinal);
+        var schedule = File.ReadAllText(Path.Combine(root, "src", "ShoutCalendar.Core", "GameSchedule.cs"));
+        Assert.Contains("Jumbo Cactpot", schedule, StringComparison.Ordinal);
+        Assert.Contains("A Nocturne for Heroes", schedule, StringComparison.Ordinal);
+        Assert.Contains("200,000 MGP", schedule, StringComparison.Ordinal);
         Assert.Contains("PlayChatSoundEffect", plugin, StringComparison.Ordinal);
         Assert.Contains("!entry.Accepted", window, StringComparison.Ordinal);
         Assert.Contains("AddRectFilled", window, StringComparison.Ordinal);
