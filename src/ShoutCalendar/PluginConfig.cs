@@ -21,6 +21,16 @@ public sealed class PluginConfig : IPluginConfiguration
     /// <summary>When set, a new line is kept only if two of date, time, and place are present.</summary>
     public bool AggressiveFilter { get; set; }
 
+    public bool AlarmAccepted { get; set; } = true;
+
+    public bool AlarmUnaccepted { get; set; }
+
+    public int AcceptedSound { get; set; } = 1;
+
+    public int UnacceptedSound { get; set; } = 1;
+
+    public int AlarmMinutesBefore { get; set; }
+
     public IEnumerable<CalendarEntry> ToEntries()
     {
         foreach (var stored in this.Events)

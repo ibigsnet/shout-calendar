@@ -6,6 +6,7 @@ using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using FFXIVClientStructs.FFXIV.Client.UI;
 using Lumina.Excel.Sheets;
 using ShoutCalendar.Core;
 
@@ -19,12 +20,14 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
     [PluginService] internal static IDataManager DataManager { get; private set; } = null!;
     [PluginService] internal static IClientState ClientState { get; private set; } = null!;
+    [PluginService] internal static IFramework Framework { get; private set; } = null!;
 
     private readonly PluginConfig config;
     private readonly CalendarSession session;
     private readonly ClearPrompt clearPrompt = new();
     private readonly WindowSystem windowSystem;
     private readonly CalendarWindow window;
+    private DateTime? alarmMinute;
 
     public Plugin()
     {
@@ -46,11 +49,16 @@ public sealed class Plugin : IDalamudPlugin
         this.session.UseChannels(this.config.WatchedChannels);
         this.session.UnacceptedHoldDays = this.config.UnacceptedHoldDays < 1 ? 14 : this.config.UnacceptedHoldDays;
         this.session.AggressiveFilter = this.config.AggressiveFilter;
+        this.session.AlarmAccepted = this.config.AlarmAccepted;
+        this.session.AlarmUnaccepted = this.config.AlarmUnaccepted;
+        this.session.AcceptedSound = EventAlarm.ClampSound(this.config.AcceptedSound);
+        this.session.UnacceptedSound = EventAlarm.ClampSound(this.config.UnacceptedSound);
+        this.session.AlarmMinutesBefore = this.config.AlarmMinutesBefore < 0 ? 0 : this.config.AlarmMinutesBefore;
         this.session.Log.Restore(this.config.ToEntries());
         if (this.session.Log.ExpireUnaccepted(DateTimeOffset.UtcNow, this.session.UnacceptedHoldDays) > 0)
             this.Save();
 
-        this.window = new CalendarWindow(this.session, this.clearPrompt, this.Save);
+        this.window = new CalendarWindow(this.session, this.clearPrompt, this.Save, this.PreviewSound);
         this.windowSystem = new WindowSystem("ShoutCalendar");
         this.windowSystem.AddWindow(this.window);
 
@@ -63,11 +71,13 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenMainUi += this.OpenMain;
         PluginInterface.UiBuilder.OpenConfigUi += this.OpenMain;
         ChatGui.ChatMessage += this.OnChat;
+        Framework.Update += this.OnFramework;
         this.ImportLogs();
     }
 
     public void Dispose()
     {
+        Framework.Update -= this.OnFramework;
         ChatGui.ChatMessage -= this.OnChat;
         PluginInterface.UiBuilder.Draw -= this.windowSystem.Draw;
         PluginInterface.UiBuilder.OpenMainUi -= this.OpenMain;
@@ -107,11 +117,58 @@ public sealed class Plugin : IDalamudPlugin
         this.window.Toggle();
     }
 
+    private void OnFramework(IFramework framework)
+    {
+        var now = DateTime.Now;
+        var hits = EventAlarm.Due(
+            this.session.Log.Entries,
+            now,
+            this.alarmMinute,
+            this.session.AlarmAccepted,
+            this.session.AlarmUnaccepted,
+            this.session.AlarmMinutesBefore);
+        var minute = EventAlarm.MinuteOf(now);
+        if (this.alarmMinute != minute)
+            this.alarmMinute = minute;
+
+        foreach (var hit in hits)
+        {
+            var entry = this.session.Log.Entries.FirstOrDefault(candidate => candidate.Id == hit.Id);
+            if (entry is null)
+                continue;
+            this.Announce(entry, hit.Accepted);
+        }
+    }
+
+    private void Announce(CalendarEntry entry, bool accepted)
+    {
+        var when = entry.Time?.ToString("HH:mm", CultureInfo.InvariantCulture) ?? "";
+        var place = string.IsNullOrWhiteSpace(entry.Place) ? "" : " " + entry.Place;
+        var note = entry.EventText.Length > 80 ? entry.EventText[..80] : entry.EventText;
+        var kind = accepted ? "accepted" : "pending";
+        ChatGui.Print($"Shout Calendar: {kind} {when}{place}. {note}");
+        this.PreviewSound(accepted ? this.session.AcceptedSound : this.session.UnacceptedSound);
+    }
+
+    private void PreviewSound(int sound)
+    {
+        try
+        {
+            UIGlobals.PlayChatSoundEffect((uint)EventAlarm.ClampSound(sound));
+        }
+        catch (Exception exception)
+        {
+            Log.Error(exception, "Could not play chat sound {Sound}.", sound);
+        }
+    }
+
     private void OnChat(IHandleableChatMessage message)
     {
         var when = ChatTime.FromUnixOrNow(message.Timestamp, DateTimeOffset.UtcNow);
 
         var text = message.Message.TextValue;
+        if (text.StartsWith("Shout Calendar:", StringComparison.Ordinal))
+            return;
         var sender = message.Sender.TextValue;
         this.session.HousingHint = this.CurrentHousingDistrict();
         if (!this.session.TryAddShout(text, (int)message.LogKind, when, sender))
@@ -145,6 +202,11 @@ public sealed class Plugin : IDalamudPlugin
         this.config.WatchedChannels = this.session.Channels.Order().ToList();
         this.config.UnacceptedHoldDays = this.session.UnacceptedHoldDays < 1 ? 14 : this.session.UnacceptedHoldDays;
         this.config.AggressiveFilter = this.session.AggressiveFilter;
+        this.config.AlarmAccepted = this.session.AlarmAccepted;
+        this.config.AlarmUnaccepted = this.session.AlarmUnaccepted;
+        this.config.AcceptedSound = EventAlarm.ClampSound(this.session.AcceptedSound);
+        this.config.UnacceptedSound = EventAlarm.ClampSound(this.session.UnacceptedSound);
+        this.config.AlarmMinutesBefore = this.session.AlarmMinutesBefore < 0 ? 0 : this.session.AlarmMinutesBefore;
         PluginInterface.SavePluginConfig(this.config);
     }
 

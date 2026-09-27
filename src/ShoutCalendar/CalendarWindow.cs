@@ -10,6 +10,7 @@ public sealed class CalendarWindow : Window
     private readonly CalendarSession session;
     private readonly ClearPrompt prompt;
     private readonly Action save;
+    private readonly Action<int> previewSound;
     private string? selectedId;
     private string? editingId;
     private string editNote = "";
@@ -18,13 +19,16 @@ public sealed class CalendarWindow : Window
     private string editPlace = "";
     private string holdDaysText = "";
     private bool holdDaysReady;
+    private string minutesBeforeText = "";
+    private bool minutesBeforeReady;
 
-    public CalendarWindow(CalendarSession session, ClearPrompt prompt, Action save)
+    public CalendarWindow(CalendarSession session, ClearPrompt prompt, Action save, Action<int> previewSound)
         : base("Shout Calendar (provisional)")
     {
         this.session = session;
         this.prompt = prompt;
         this.save = save;
+        this.previewSound = previewSound;
         this.SizeConstraints = new WindowSizeConstraints
         {
             MinimumSize = new Vector2(1180, 820),
@@ -49,6 +53,7 @@ public sealed class CalendarWindow : Window
         ImGui.TextUnformatted("Pending");
         this.DrawHoldDays();
         this.DrawAggressiveFilter();
+        this.DrawAlarms();
         var rowRight = ImGui.GetCursorScreenPos().X + ImGui.GetContentRegionAvail().X;
         var continued = false;
         this.DrawWrappingButton("Clear all", rowRight, ref continued, () => this.prompt.Ask(ClearTarget.All));
@@ -139,6 +144,80 @@ public sealed class CalendarWindow : Window
         if (!ImGui.Checkbox("Aggressive filter (2 of date, time, place)##aggressive", ref aggressive))
             return;
         this.session.AggressiveFilter = aggressive;
+        this.save();
+    }
+
+    private void DrawAlarms()
+    {
+        ImGui.SetNextItemOpen(true, ImGuiCond.FirstUseEver);
+        if (!ImGui.CollapsingHeader("Alarms##alarms"))
+            return;
+
+        var accepted = this.session.AlarmAccepted;
+        if (ImGui.Checkbox("Alarm accepted events##alarm-accepted", ref accepted))
+        {
+            this.session.AlarmAccepted = accepted;
+            this.save();
+        }
+
+        this.DrawSoundChoice("Accepted <se.#>##accepted-se", this.session.AcceptedSound, sound => this.session.AcceptedSound = sound);
+        if (ImGui.Button("Test##accepted-se"))
+            this.previewSound(this.session.AcceptedSound);
+
+        this.DrawMinutesBefore();
+
+        var pending = this.session.AlarmUnaccepted;
+        if (ImGui.Checkbox("Alarm unaccepted events##alarm-pending", ref pending))
+        {
+            this.session.AlarmUnaccepted = pending;
+            this.save();
+        }
+
+        this.DrawSoundChoice("Unaccepted <se.#>##pending-se", this.session.UnacceptedSound, sound => this.session.UnacceptedSound = sound);
+        if (ImGui.Button("Test##pending-se"))
+            this.previewSound(this.session.UnacceptedSound);
+    }
+
+    private void DrawSoundChoice(string label, int current, Action<int> setSound)
+    {
+        var shown = $"<se.{EventAlarm.ClampSound(current)}>";
+        if (!ImGui.BeginCombo(label, shown))
+            return;
+
+        for (var sound = EventAlarm.MinSound; sound <= EventAlarm.MaxSound; sound++)
+        {
+            var choice = $"<se.{sound}>";
+            if (ImGui.Selectable($"{choice}##{label}-{sound}", sound == EventAlarm.ClampSound(current)))
+            {
+                setSound(sound);
+                this.save();
+            }
+        }
+
+        ImGui.EndCombo();
+    }
+
+    private void DrawMinutesBefore()
+    {
+        if (!this.minutesBeforeReady)
+        {
+            this.minutesBeforeText = this.session.AlarmMinutesBefore.ToString();
+            this.minutesBeforeReady = true;
+        }
+
+        ImGui.SetNextItemWidth(48f);
+        ImGui.InputText("Minutes before##alarm-lead", ref this.minutesBeforeText, 4);
+        if (!ImGui.IsItemDeactivatedAfterEdit())
+            return;
+        if (!int.TryParse(this.minutesBeforeText.Trim(), out var minutes) || minutes < 0)
+        {
+            this.minutesBeforeText = this.session.AlarmMinutesBefore.ToString();
+            return;
+        }
+
+        if (minutes == this.session.AlarmMinutesBefore)
+            return;
+        this.session.AlarmMinutesBefore = minutes;
         this.save();
     }
 

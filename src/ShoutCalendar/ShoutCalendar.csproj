@@ -1,6 +1,6 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <Version>0.1.1</Version>
+    <Version>0.1.2</Version>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -21,8 +21,10 @@ Accepted and pending invites are saved across restarts. Hold unaccepted for (day
 
 /shoutcalendar opens the calendar. /shoutcalendar test checks a line on your machine and does not send chat.
 
-Aggressive filter, off by default, keeps a message only when two of a date, a time, and a place are present.</Description>
-    <Changelog>Aggressive filter option. Off by default, it ignores a line unless two of a date, a time, and a place are present.</Changelog>
+Aggressive filter, off by default, keeps a message only when two of a date, a time, and a place are present.
+
+Accepted events ring at their clock, or the minutes before that you set, using a chat sound from &lt;se.1&gt; to &lt;se.16&gt;. Alarm unaccepted events is off until you check it, and it has its own sound.</Description>
+    <Changelog>Alarms for accepted events, with a separate sound and checkbox for unaccepted events.</Changelog>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\ShoutCalendar.Core\ShoutCalendar.Core.csproj" />

@@ -25,6 +25,16 @@ public sealed class CalendarSession
     /// <summary>When set, a line is kept only if two of date, time, and place are present.</summary>
     public bool AggressiveFilter { get; set; }
 
+    public bool AlarmAccepted { get; set; } = true;
+
+    public bool AlarmUnaccepted { get; set; }
+
+    public int AcceptedSound { get; set; } = EventAlarm.MinSound;
+
+    public int UnacceptedSound { get; set; } = EventAlarm.MinSound;
+
+    public int AlarmMinutesBefore { get; set; }
+
     public void UseChannels(IEnumerable<int>? saved)
     {
         this.Channels.Clear();

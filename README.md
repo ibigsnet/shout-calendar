@@ -35,6 +35,8 @@ Accepted and pending invites are saved across restarts. **Hold unaccepted for (d
 
 **Aggressive filter**, off by default, keeps a new line only when two of a date, a time, and a place are present. On a pending invite, Decline and Delete both remove it.
 
+**Alarms** ring a chat sound, `<se.1>` through `<se.16>`, when an accepted event's clock arrives. **Minutes before** is 0 at that clock. **Alarm unaccepted events** is off until checked, and it has its own sound. Test plays the selected sound.
+
 ## Official plugin list
 
 The official list is a separate review. It is a pull request to [goatcorp/DalamudPluginsD17](https://github.com/goatcorp/DalamudPluginsD17) with a `manifest.toml`, a square `icon.png` (64 to 512 pixels), and a pass through the testing track. That pull request has not been opened.
