@@ -11,6 +11,7 @@ public class ReviewTests
     public void EditingADateMovesAnUnscheduledInviteOntoThatDay()
     {
         var session = new CalendarSession(new DateOnly(2026, 9, 1));
+        session.AggressiveFilter = false;
         Assert.True(session.TryAddShout("ward 13 on Faerie", ShoutHarvest.ShoutChannel, ShoutAt, "Mina"));
         var pending = Assert.Single(session.Log.Entries);
         Assert.Null(pending.Date);
