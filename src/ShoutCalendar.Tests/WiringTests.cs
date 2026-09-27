@@ -16,6 +16,7 @@ public class WiringTests
         Assert.Contains("this.window.Toggle()", plugin, StringComparison.Ordinal);
         Assert.Contains("this.session.CurrentMonth()", window, StringComparison.Ordinal);
         Assert.Contains("this.session.Page(", window, StringComparison.Ordinal);
+        Assert.Contains("Button(\"Today\")", window, StringComparison.Ordinal);
         Assert.Contains("OngoingCheck.IsOngoing", window, StringComparison.Ordinal);
         Assert.Contains("month.Cells", window, StringComparison.Ordinal);
         Assert.Contains("Accept", window, StringComparison.Ordinal);

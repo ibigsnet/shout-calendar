@@ -417,6 +417,16 @@ public sealed class CalendarWindow : Window
         ImGui.SameLine();
         if (ImGui.Button("Next month"))
             month = this.session.Page(1);
+        var today = DateTime.Now;
+        if (month.Year != today.Year || month.Month != today.Month)
+        {
+            ImGui.SameLine();
+            if (ImGui.Button("Today"))
+            {
+                this.session.Show(DateOnly.FromDateTime(today));
+                month = this.session.CurrentMonth();
+            }
+        }
 
         const float gap = 6f;
         var side = MathF.Max(120f, MathF.Floor((ImGui.GetContentRegionAvail().X - (gap * 6f)) / 7f));
