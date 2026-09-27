@@ -1,3 +1,5 @@
+using System.Numerics;
+
 namespace ShoutCalendar.Core;
 
 /// <summary>
@@ -42,6 +44,18 @@ public sealed class CalendarSession
     public string ResetSoundFile { get; set; } = "";
 
     public bool AlarmResets { get; set; } = true;
+
+    public Vector4 PendingColor { get; set; } = new(0.93f, 0.62f, 0.12f, 0.95f);
+
+    public Vector4 AcceptedColor { get; set; } = new(0.12f, 0.48f, 0.24f, 0.95f);
+
+    public Vector4 TodayColor { get; set; } = new(0.34f, 0.40f, 0.48f, 1f);
+
+    public Vector4 CrystalColor { get; set; } = new(0.18f, 0.52f, 0.86f, 0.95f);
+
+    public Vector4 CactusColor { get; set; } = new(0.55f, 0.78f, 0.22f, 0.95f);
+
+    public Vector4 EventColor { get; set; } = new(0.10f, 0.10f, 0.12f, 0.95f);
 
     public int AlarmMinutesBefore { get; set; }
 

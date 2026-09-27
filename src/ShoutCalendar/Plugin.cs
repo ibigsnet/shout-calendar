@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Numerics;
 using Dalamud.Game.Chat;
 using Dalamud.Game.Command;
 using Dalamud.Game.Text;
@@ -60,6 +61,12 @@ public sealed class Plugin : IDalamudPlugin
         this.session.UnacceptedSoundFile = this.config.UnacceptedSoundFile ?? "";
         this.session.ResetSoundFile = this.config.ResetSoundFile ?? "";
         this.session.AlarmResets = this.config.AlarmResets;
+        this.session.PendingColor = Shown(this.config.PendingColor, new Vector4(0.93f, 0.62f, 0.12f, 0.95f));
+        this.session.AcceptedColor = Shown(this.config.AcceptedColor, new Vector4(0.12f, 0.48f, 0.24f, 0.95f));
+        this.session.TodayColor = Shown(this.config.TodayColor, new Vector4(0.34f, 0.40f, 0.48f, 1f));
+        this.session.CrystalColor = Shown(this.config.CrystalColor, new Vector4(0.18f, 0.52f, 0.86f, 0.95f));
+        this.session.CactusColor = Shown(this.config.CactusColor, new Vector4(0.55f, 0.78f, 0.22f, 0.95f));
+        this.session.EventColor = Shown(this.config.EventColor, new Vector4(0.10f, 0.10f, 0.12f, 0.95f));
         this.session.AlarmMinutesBefore = this.config.AlarmMinutesBefore < 0 ? 0 : this.config.AlarmMinutesBefore;
         this.session.UseResets(this.config.EnabledResets);
         this.session.CactpotRegion = GameSchedule.NormalizeRegion(this.config.CactpotRegion);
@@ -230,6 +237,8 @@ public sealed class Plugin : IDalamudPlugin
         }
     }
 
+    private static Vector4 Shown(Vector4 color, Vector4 fallback) => color.W <= 0f ? fallback : color;
+
     private void Save()
     {
         this.config.Events.Clear();
@@ -247,6 +256,12 @@ public sealed class Plugin : IDalamudPlugin
         this.config.UnacceptedSoundFile = this.session.UnacceptedSoundFile ?? "";
         this.config.ResetSoundFile = this.session.ResetSoundFile ?? "";
         this.config.AlarmResets = this.session.AlarmResets;
+        this.config.PendingColor = this.session.PendingColor;
+        this.config.AcceptedColor = this.session.AcceptedColor;
+        this.config.TodayColor = this.session.TodayColor;
+        this.config.CrystalColor = this.session.CrystalColor;
+        this.config.CactusColor = this.session.CactusColor;
+        this.config.EventColor = this.session.EventColor;
         this.config.AlarmMinutesBefore = this.session.AlarmMinutesBefore < 0 ? 0 : this.session.AlarmMinutesBefore;
         this.config.EnabledResets = this.session.Resets.Order().ToList();
         this.config.CactpotRegion = GameSchedule.NormalizeRegion(this.session.CactpotRegion);
