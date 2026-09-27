@@ -12,6 +12,7 @@ public sealed class CalendarWindow : Window
     private readonly ClearPrompt prompt;
     private readonly Action save;
     private readonly Action<int, string?> previewSound;
+    private readonly Action<string, float, float, bool, string?> openPin;
     private readonly FileDialogManager dialogs;
     private string? selectedId;
     private string? editingId;
@@ -31,7 +32,8 @@ public sealed class CalendarWindow : Window
         ClearPrompt prompt,
         Action save,
         Action<int, string?> previewSound,
-        FileDialogManager dialogs)
+        FileDialogManager dialogs,
+        Action<string, float, float, bool, string?> openPin)
         : base("Shout Calendar (provisional)")
     {
         this.session = session;
@@ -39,6 +41,7 @@ public sealed class CalendarWindow : Window
         this.save = save;
         this.previewSound = previewSound;
         this.dialogs = dialogs;
+        this.openPin = openPin;
         this.SizeConstraints = new WindowSizeConstraints
         {
             MinimumSize = new Vector2(1180, 820),
@@ -595,6 +598,7 @@ public sealed class CalendarWindow : Window
                 this.selectedLine = null;
             }
 
+            this.DrawPins(entry.Place + "\n" + entry.EventText, null);
             return;
         }
 
@@ -606,6 +610,37 @@ public sealed class CalendarWindow : Window
         if (!string.IsNullOrWhiteSpace(line.Detail))
             ImGui.TextWrapped(line.Detail);
         ImGui.TextUnformatted("This reset time is fixed.");
+        this.DrawPins(line.Detail, line.Title);
+    }
+
+    private void DrawPins(string text, string? chip)
+    {
+        var shown = new List<(float X, float Y)>();
+        foreach (var pin in GameSchedule.Guide(chip))
+        {
+            var caption = pin.HasMap
+                ? $"{pin.Label} ({pin.X:0.0}, {pin.Y:0.0})"
+                : pin.Quest ?? pin.Label;
+            if (pin.HasMap && pin.Quest is not null)
+                caption = $"{pin.Quest} — {caption}";
+            if (!ImGui.SmallButton($"{caption}##pin-{caption}"))
+                continue;
+            this.openPin(pin.PlaceName, pin.X, pin.Y, pin.HasMap, pin.Quest);
+            if (pin.HasMap)
+                shown.Add((pin.X, pin.Y));
+        }
+
+        var place = this.session.Places.Match(text).FirstOrDefault() ?? "";
+        foreach (var spot in MapMentions.Read(text))
+        {
+            if (shown.Any(pin => Math.Abs(pin.X - spot.X) < 0.05f && Math.Abs(pin.Y - spot.Y) < 0.05f))
+                continue;
+            var caption = string.IsNullOrEmpty(place)
+                ? $"Flag ({spot.X:0.0}, {spot.Y:0.0}) on your current map"
+                : $"{place} ({spot.X:0.0}, {spot.Y:0.0})";
+            if (ImGui.SmallButton($"{caption}##spot-{spot.X}-{spot.Y}"))
+                this.openPin(place, spot.X, spot.Y, true, null);
+        }
     }
 
     private DayLine LineFor(ScheduleOccurrence mark)

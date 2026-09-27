@@ -63,6 +63,28 @@ public class ScheduleTests
     }
 
     [Fact]
+    public void NocturnePinsIncludeTheQuestGiver()
+    {
+        var pins = GameSchedule.Guide("Nocturne");
+        var giver = pins.Single(pin => pin.Label == "Kipih Jakkya");
+
+        Assert.Equal("Ul'dah - Steps of Nald", giver.PlaceName);
+        Assert.Equal(8.5f, giver.X);
+        Assert.Equal(9.7f, giver.Y);
+        Assert.Equal("The Man in Black", giver.Quest);
+    }
+
+    [Fact]
+    public void ParenthesesAndShoutClocksBothCountAsMapSpots()
+    {
+        var spots = MapMentions.Read("meet (12.4, 8.1) or x 3.0, y 4.5");
+
+        Assert.Equal(2, spots.Count);
+        Assert.Equal(12.4f, spots[0].X);
+        Assert.Equal(4.5f, spots[1].Y);
+    }
+
+    [Fact]
     public void ASavedResetListIsKept()
     {
         var saved = new[] { GameSchedule.Cactpot, GameSchedule.Weekly, GameSchedule.Nocturne };

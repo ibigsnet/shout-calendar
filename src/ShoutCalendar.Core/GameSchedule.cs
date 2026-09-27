@@ -28,6 +28,8 @@ public sealed record ScheduleItem(
     string Group,
     ScheduleClock Clock);
 
+public readonly record struct GuidePin(string Label, string PlaceName, float X, float Y, bool HasMap, string? Quest);
+
 public sealed record ScheduleOccurrence(
     string Id,
     string Name,
@@ -125,6 +127,18 @@ public static class GameSchedule
     }
 
     public static IReadOnlyList<string> DefaultIds { get; } = Items.Where(item => item.DefaultOn).Select(item => item.Id).ToArray();
+
+    private static readonly GuidePin[] NocturnePins =
+    [
+        new("Kipih Jakkya", "Ul'dah - Steps of Nald", 8.5f, 9.7f, true, "The Man in Black"),
+        new("Ironworks Vendor", "The Gold Saucer", 5.2f, 6.3f, true, null),
+        new("In the Dark of Night", "", 0f, 0f, false, "In the Dark of Night"),
+        new("Messenger of the Winds", "", 0f, 0f, false, "Messenger of the Winds"),
+        new("The Ultimate Weapon", "", 0f, 0f, false, "The Ultimate Weapon"),
+    ];
+
+    public static IReadOnlyList<GuidePin> Guide(string? chip) =>
+        chip == "Nocturne" ? NocturnePins : [];
 
     public static bool IsKnown(string? id) => Items.Any(item => item.Id == id);
 

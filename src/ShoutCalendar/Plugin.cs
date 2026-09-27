@@ -1,6 +1,9 @@
 using System.Globalization;
 using System.Numerics;
+using Dalamud.Bindings.ImGui;
 using Dalamud.Game.Chat;
+using Dalamud.Game.Text.SeStringHandling;
+using Dalamud.Game.Text.SeStringHandling.Payloads;
 using Dalamud.Game.Command;
 using Dalamud.Game.Text;
 using Dalamud.Interface.Windowing;
@@ -23,6 +26,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IDataManager DataManager { get; private set; } = null!;
     [PluginService] internal static IClientState ClientState { get; private set; } = null!;
     [PluginService] internal static IFramework Framework { get; private set; } = null!;
+    [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
 
     private readonly PluginConfig config;
     private readonly CalendarSession session;
@@ -30,6 +34,8 @@ public sealed class Plugin : IDalamudPlugin
     private readonly WindowSystem windowSystem;
     private readonly CalendarWindow window;
     private readonly FileDialogManager dialogs = new();
+    private readonly Dictionary<string, uint> questIds = new(StringComparer.OrdinalIgnoreCase);
+    private bool questsScanned;
     private DateTime? alarmMinute;
 
     public Plugin()
@@ -63,10 +69,10 @@ public sealed class Plugin : IDalamudPlugin
         this.session.AlarmResets = this.config.AlarmResets;
         this.session.PendingColor = Shown(this.config.PendingColor, new Vector4(0.93f, 0.62f, 0.12f, 0.95f));
         this.session.AcceptedColor = Shown(this.config.AcceptedColor, new Vector4(0.12f, 0.48f, 0.24f, 0.95f));
-        this.session.TodayColor = Shown(this.config.TodayColor, new Vector4(0.34f, 0.40f, 0.48f, 1f));
+        this.session.TodayColor = Shown(this.config.TodayColor, new Vector4(0.183f, 0.183f, 0.183f, 1f));
         this.session.CrystalColor = Shown(this.config.CrystalColor, new Vector4(0.18f, 0.52f, 0.86f, 0.95f));
         this.session.CactusColor = Shown(this.config.CactusColor, new Vector4(0.55f, 0.78f, 0.22f, 0.95f));
-        this.session.EventColor = Shown(this.config.EventColor, new Vector4(0.10f, 0.10f, 0.12f, 0.95f));
+        this.session.EventColor = Shown(this.config.EventColor, new Vector4(0f, 0f, 1f, 0.64f));
         this.session.AlarmMinutesBefore = this.config.AlarmMinutesBefore < 0 ? 0 : this.config.AlarmMinutesBefore;
         this.session.UseResets(this.config.EnabledResets);
         this.session.CactpotRegion = GameSchedule.NormalizeRegion(this.config.CactpotRegion);
@@ -74,7 +80,7 @@ public sealed class Plugin : IDalamudPlugin
         if (this.session.Log.ExpireUnaccepted(DateTimeOffset.UtcNow, this.session.UnacceptedHoldDays) > 0)
             this.Save();
 
-        this.window = new CalendarWindow(this.session, this.clearPrompt, this.Save, this.PlayAlarm, this.dialogs);
+        this.window = new CalendarWindow(this.session, this.clearPrompt, this.Save, this.PlayAlarm, this.dialogs, this.OpenPin);
         this.windowSystem = new WindowSystem("ShoutCalendar");
         this.windowSystem.AddWindow(this.window);
 
@@ -191,6 +197,70 @@ public sealed class Plugin : IDalamudPlugin
         this.PreviewSound(sound);
         if (!string.IsNullOrWhiteSpace(file))
             ChatGui.Print($"Shout Calendar: could not play that file. Using <se.{EventAlarm.ClampSound(sound)}>.");
+    }
+
+    private void OpenPin(string place, float x, float y, bool hasMap, string? quest)
+    {
+        if (hasMap)
+            this.OpenMap(place, x, y);
+        if (!string.IsNullOrWhiteSpace(quest))
+            this.PrintQuest(quest);
+    }
+
+    private void OpenMap(string place, float x, float y)
+    {
+        SeString? link = null;
+        if (!string.IsNullOrWhiteSpace(place))
+            link = SeString.CreateMapLink(place, x, y);
+        if (link is null && ClientState.TerritoryType != 0
+            && DataManager.GetExcelSheet<TerritoryType>().TryGetRow(ClientState.TerritoryType, out var territory))
+        {
+            link = SeString.CreateMapLink(ClientState.TerritoryType, territory.Map.RowId, x, y);
+        }
+
+        if (link is null)
+        {
+            ChatGui.Print($"Shout Calendar: could not find a map for {place}.");
+            return;
+        }
+
+        var payload = link.Payloads.OfType<MapLinkPayload>().FirstOrDefault();
+        if (payload is not null)
+        {
+            GameGui.OpenMapWithMapLink(payload);
+            ImGui.SetClipboardText(payload.CoordinateString);
+        }
+
+        ChatGui.Print(link);
+    }
+
+    private void PrintQuest(string name)
+    {
+        var id = this.FindQuest(name);
+        if (id is null)
+        {
+            ChatGui.Print($"Shout Calendar: could not find the quest {name}.");
+            return;
+        }
+
+        ChatGui.Print(new SeStringBuilder().AddText("Shout Calendar: ").AddQuestLink(id.Value).Build());
+    }
+
+    private uint? FindQuest(string name)
+    {
+        if (!this.questsScanned)
+        {
+            foreach (var row in DataManager.GetExcelSheet<Quest>())
+            {
+                var text = row.Name.ExtractText().Trim();
+                if (text.Length > 0)
+                    this.questIds.TryAdd(text, row.RowId);
+            }
+
+            this.questsScanned = true;
+        }
+
+        return this.questIds.TryGetValue(name, out var id) ? id : null;
     }
 
     private void PreviewSound(int sound)
