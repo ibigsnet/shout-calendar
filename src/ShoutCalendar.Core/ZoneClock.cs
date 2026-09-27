@@ -94,11 +94,16 @@ public static class ZoneClock
             var moved = Move(storedDate, wall.Time, wall.Label, calendarZone);
             if (AlreadyShown(entry, storedDate, moved))
                 return new Face(storedDate, entry.Time ?? moved.Time);
-            if (storedDate > DateOnly.MinValue)
+            foreach (var shift in new[] { -1, 1 })
             {
-                var prior = Move(storedDate.AddDays(-1), wall.Time, wall.Label, calendarZone);
-                if (AlreadyShown(entry, storedDate, prior))
-                    return new Face(storedDate, entry.Time ?? prior.Time);
+                if (shift < 0 && storedDate == DateOnly.MinValue)
+                    continue;
+                if (shift > 0 && storedDate == DateOnly.MaxValue)
+                    continue;
+                var civil = storedDate.AddDays(shift);
+                var other = Move(civil, wall.Time, wall.Label, calendarZone);
+                if (AlreadyShown(entry, storedDate, other))
+                    return new Face(storedDate, entry.Time ?? other.Time);
             }
 
             return new Face(moved.Date, moved.Time);
