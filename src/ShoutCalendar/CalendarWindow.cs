@@ -24,6 +24,7 @@ public sealed class CalendarWindow : Window
     private string minutesBeforeText = "";
     private bool minutesBeforeReady;
     private int? folderDay;
+    private DayLine? selectedLine;
 
     public CalendarWindow(
         CalendarSession session,
@@ -437,6 +438,7 @@ public sealed class CalendarWindow : Window
         this.DrawSchedule(month, grid, side, gap);
         ImGui.SetCursorScreenPos(grid + new Vector2(0, rows * (side + gap)));
         ImGui.Dummy(new Vector2(1f, 1f));
+        this.DrawSelectedDetail();
         this.DrawUndated(now);
         ImGui.EndChild();
     }
@@ -481,7 +483,11 @@ public sealed class CalendarWindow : Window
                 draw.AddText(new Vector2(min.X + 4f, min.Y + ((bar - ImGui.GetTextLineHeight()) * 0.5f)), ImGui.ColorConvertFloat4ToU32(ink), label);
                 draw.PopClipRect();
                 if (ImGui.IsMouseHoveringRect(min, max))
+                {
                     ImGui.SetTooltip($"{mark.Name}\n{when}\n{mark.Detail}");
+                    if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+                        this.SelectLine(this.LineFor(mark));
+                }
             }
         }
     }
@@ -548,10 +554,64 @@ public sealed class CalendarWindow : Window
             var updated = this.session.Log.Entries.First(item => item.Id == entry.Id);
             if (updated.Date is DateOnly moved)
                 this.session.Show(moved);
+            this.BeginEdit(updated);
             this.save();
         }
+    }
 
-        this.editingId = null;
+    private void SelectLine(DayLine line)
+    {
+        this.selectedLine = line;
+        if (line.Entry is CalendarEntry entry)
+            this.BeginEdit(entry);
+        else
+            this.editingId = null;
+    }
+
+    private void DrawSelectedDetail()
+    {
+        if (this.selectedLine is not DayLine line)
+            return;
+
+        ImGui.Separator();
+        if (line.Entry is CalendarEntry snapshot)
+        {
+            var entry = this.session.Log.Entries.FirstOrDefault(item => item.Id == snapshot.Id);
+            if (entry is null)
+            {
+                this.selectedLine = null;
+                return;
+            }
+
+            var (fill, ink) = this.Ink(line with { Entry = entry });
+            ImGui.PushStyleColor(ImGuiCol.Text, ink);
+            ImGui.TextUnformatted(entry.Accepted ? "Accepted" : "Pending");
+            ImGui.PopStyleColor();
+            _ = fill;
+            this.DrawEdit(entry);
+            if (ImGui.SmallButton($"Delete##detail-{entry.Id}"))
+            {
+                this.RemoveEntry(entry.Id);
+                this.selectedLine = null;
+            }
+
+            return;
+        }
+
+        var (resetFill, resetInk) = this.Ink(line);
+        ImGui.PushStyleColor(ImGuiCol.Text, resetInk);
+        ImGui.TextUnformatted(line.Time is TimeOnly time ? $"{time:HH:mm}  {line.Title}" : line.Title);
+        ImGui.PopStyleColor();
+        _ = resetFill;
+        if (!string.IsNullOrWhiteSpace(line.Detail))
+            ImGui.TextWrapped(line.Detail);
+        ImGui.TextUnformatted("This reset time is fixed.");
+    }
+
+    private DayLine LineFor(ScheduleOccurrence mark)
+    {
+        var time = TimeOnly.FromDateTime(mark.LocalStart);
+        return new DayLine(time, 0, mark.Chip, mark.Name + ". " + mark.Detail, null, mark.Tone, mark.StartDate != mark.EndDate);
     }
 
     private void DrawDay(MonthCell cell, float side)
@@ -608,7 +668,11 @@ public sealed class CalendarWindow : Window
         draw.PopClipRect();
         ImGui.Dummy(new Vector2(width, this.GlanceBar()));
         if (ImGui.IsItemHovered())
+        {
             ImGui.SetTooltip($"{when}{line.Title}\n{line.Detail}");
+            if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+                this.SelectLine(line);
+        }
     }
 
     private void DrawDayFolder()
