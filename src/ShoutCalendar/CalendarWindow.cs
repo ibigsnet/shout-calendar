@@ -34,7 +34,7 @@ public sealed class CalendarWindow : Window
         Action<int, string?> previewSound,
         FileDialogManager dialogs,
         Action<string, float, float, bool, string?> openPin)
-        : base("Shout Calendar (provisional)")
+        : base("FFXIV Shout Calendar")
     {
         this.session = session;
         this.prompt = prompt;

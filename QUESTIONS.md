@@ -1,6 +1,6 @@
 # Open questions
 
-The display name and author are still provisional (`Shout Calendar (provisional)` / `provisional`). The assembly internal name is `ShoutCalendar`.
+The display name and author are Shout Calendar and RifleJock. The window title is FFXIV Shout Calendar. The assembly internal name is `ShoutCalendar`.
 
 ## Publish to GitHub or the official Dalamud repository
 

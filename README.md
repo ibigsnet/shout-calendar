@@ -1,8 +1,8 @@
-# Shout Calendar (provisional)
+# Shout Calendar
 
 Dalamud plugin that watches FFXIV chat for event invites and keeps them on a month calendar until you accept them. Nothing is accepted for you, and nothing is sent to other players.
 
-The display name and author are still provisional.
+The installer name is Shout Calendar. The window title is FFXIV Shout Calendar. The author is RifleJock.
 
 License: GPL-3.0-or-later. See [LICENSE](LICENSE).
 
