@@ -155,6 +155,9 @@ public sealed class CalendarWindow : Window
                     this.session.Show(selectedDay);
             }
 
+            var title = EventTitle.Choose(entry.EventText);
+            if (title.Length > 0)
+                ImGui.TextUnformatted(title);
             var dayText = entry.Date?.ToString("yyyy-MM-dd") ?? "needs a date";
             if (entry.Repeat is not null)
                 dayText += " · " + entry.Repeat.Label;
@@ -165,8 +168,9 @@ public sealed class CalendarWindow : Window
             this.DrawLinks(entry.EventText);
             if (ImGui.Button($"Edit##{entry.Id}"))
             {
-                var title = string.IsNullOrWhiteSpace(entry.Place) ? entry.EventText : entry.Place;
-                this.SelectLine(new DayLine(entry.Time, entry.Time is null ? 2 : 1, title, entry.EventText, entry, null, false));
+                var named = EventTitle.Choose(entry.EventText);
+                var lineTitle = named.Length > 0 ? named : string.IsNullOrWhiteSpace(entry.Place) ? entry.EventText : entry.Place;
+                this.SelectLine(new DayLine(entry.Time, entry.Time is null ? 2 : 1, lineTitle, entry.EventText, entry, null, false));
             }
             ImGui.SameLine();
             if (ImGui.Button($"Accept##{entry.Id}") && this.session.Log.Accept(entry.Id))
@@ -214,6 +218,9 @@ public sealed class CalendarWindow : Window
     private void DrawSharedRow(SyncBook book, SyncAnnouncement item)
     {
         ImGui.Separator();
+        var title = EventTitle.Choose(item.Text, item.Category);
+        if (title.Length > 0)
+            ImGui.TextUnformatted(title);
         var line = $"{item.World}  {item.Text}";
         var width = MathF.Max(1f, ImGui.GetContentRegionAvail().X);
         var size = ImGui.CalcTextSize(line, false, width);
@@ -232,11 +239,24 @@ public sealed class CalendarWindow : Window
         if (ImGui.SmallButton($"Accept##sync-accept-{item.Id}") && book.AcceptRemote(item.Id))
             this.categoryDraft = "";
         ImGui.SameLine();
+        if (ImGui.SmallButton($"Save local##sync-save-{item.Id}"))
+            this.SaveLocal(book, item);
+        ImGui.SameLine();
         if (ImGui.SmallButton($"Decline##sync-decline-{item.Id}"))
             book.DeclineRemote(item.Id);
         ImGui.SameLine();
         if (ImGui.SmallButton($"Delete##sync-row-{item.Id}"))
             book.Dismiss(item.Id);
+    }
+
+    private void SaveLocal(SyncBook book, SyncAnnouncement item)
+    {
+        var copy = LocalCopy.From(item, this.session.Places, DateTimeOffset.Now);
+        if (!this.session.Log.Add(copy))
+            return;
+        book.AcceptRemote(item.Id);
+        this.categoryDraft = "";
+        this.save();
     }
 
     private void DrawResets()
@@ -1077,7 +1097,8 @@ public sealed class CalendarWindow : Window
                 continue;
             }
 
-            var title = string.IsNullOrWhiteSpace(entry.Place) ? entry.EventText : entry.Place;
+            var named = EventTitle.Choose(entry.EventText);
+            var title = named.Length > 0 ? named : string.IsNullOrWhiteSpace(entry.Place) ? entry.EventText : entry.Place;
             var clock = labeled ? shown.Time : entry.Time;
             lines.Add(new DayLine(clock, clock is null ? 2 : 1, title, entry.EventText, entry, null, false));
         }
@@ -1726,7 +1747,8 @@ public sealed class CalendarWindow : Window
             TimeOnly? time = TimeOnly.TryParseExact(item.Time, "HH:mm", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var clock)
                 ? clock
                 : null;
-            var title = string.IsNullOrWhiteSpace(item.Category) ? item.Text : item.Category;
+            var named = EventTitle.Choose(item.Text, item.Category);
+            var title = named.Length > 0 ? named : item.Text;
             lines.Add(new DayLine(time, time is null ? 2 : 1, title, item.Text, null, null, false, null, item.ColorToken, item.Id));
         }
     }

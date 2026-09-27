@@ -1,6 +1,6 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <Version>0.1.21</Version>
+    <Version>0.1.22</Version>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -19,7 +19,7 @@ Add event keeps a pasted or typed invite on this computer. Save accepts a pendin
 The Resets tab adds Jumbo Cactpot, the weekly reset, and limited events such as A Nocturne for Heroes. Those three start on. Resets that share a clock share one line. Alarms play a chat sound from se.1 to se.16, or a WAV you choose, 15 minutes before an accepted event by default. Unaccepted invites are held for 1 day. Colors are yours to set. Today starts as a light wash.
 
 /shoutcalendar opens the calendar. /shoutcalendar test checks a line on your machine and does not send chat.</Description>
-    <Changelog>Checked servers show together, and a shared invite waits only when that server is checked. PT, ET, CT, and MT are shown in your local time. Clear local and clear sync are separate, and the question names every open server calendar.</Changelog>
+    <Changelog>A boxed name such as Moonlit Kiss is the title, and the time stays beside it. Save local keeps a shared invite on this computer.</Changelog>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\ShoutCalendar.Core\ShoutCalendar.Core.csproj" />

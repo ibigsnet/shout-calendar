@@ -519,6 +519,40 @@ public class HarvestTests
     }
 
     [Fact]
+    public void BoxedLettersBecomeTheTitleAndASharedInviteCanBeSavedLocally()
+    {
+        var moonlit = "\uE07D\uE07F\uE07F\uE07E\uE07C\uE079\uE084 \uE07B\uE079\uE083\uE083 is having Emo Night";
+        Assert.Equal("Moonlit Kiss", EventTitle.Choose(moonlit, "dance club"));
+        var jet = "\uE080\uE085\uE082\uE075 \uE03C\uE07A\uE075\uE084 Flying HIGH";
+        Assert.Equal("Pure Jet", EventTitle.Choose(jet));
+        var ugly = "\uE07D\uE079\uE081\uE07F'\uE084\uE075 \uE085\uE077\uE07C\uE089 is pourin'";
+        Assert.Equal("Miqo'te Ugly", EventTitle.Choose(ugly));
+        Assert.Equal("bard show", EventTitle.Choose("open at 8pm ward 4", "bard show"));
+        Assert.Equal("", EventTitle.Choose("open at 8pm ward 4"));
+
+        var item = new SyncAnnouncement
+        {
+            Id = "goblin-night",
+            World = "Goblin",
+            Channel = 11,
+            Text = "Open at 3pm ward 14 plot 8",
+            Date = "2026-09-27",
+            Time = "18:00",
+            FromSync = true,
+        };
+        var copy = LocalCopy.From(item, new PlaceCatalog(["The Lavender Beds"]), new DateTimeOffset(2026, 9, 27, 21, 49, 0, TimeSpan.Zero));
+        Assert.True(copy.Manual);
+        Assert.True(copy.Accepted);
+        Assert.Equal(0, copy.Channel);
+        Assert.Equal(item.Text, copy.EventText);
+        Assert.Equal(new DateOnly(2026, 9, 27), copy.Date);
+        Assert.Equal(new TimeOnly(18, 0), copy.Time);
+        var log = new CalendarLog();
+        Assert.True(log.Add(copy));
+        Assert.Contains(log.Entries, row => row.Manual && row.EventText == item.Text);
+    }
+
+    [Fact]
     public void PacificClockBecomesLocalAndAStoredFifteenHundredFollowsTheText()
     {
         var eastern = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
