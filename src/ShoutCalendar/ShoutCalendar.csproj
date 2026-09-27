@@ -8,6 +8,7 @@
     <Author>RifleJock</Author>
     <Name>Shout Calendar</Name>
     <RepoUrl>https://github.com/ibigsnet/shout-calendar</RepoUrl>
+    <Tags>utility</Tags>
     <Punchline>Turns FFXIV chat invites into a month calendar you accept yourself.</Punchline>
     <Description>Shout Calendar listens to the chats you choose and keeps event invites on a month calendar until you accept them. Nothing is accepted for you, and nothing is sent to other players.
 

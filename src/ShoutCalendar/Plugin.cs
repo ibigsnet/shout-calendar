@@ -47,6 +47,7 @@ public sealed class Plugin : IDalamudPlugin
     private ICallGateProvider<byte[], int, string, string>? syncIngest;
     private ICallGateProvider<byte[], string>? syncRead;
     private ICallGateProvider<byte[], string, bool>? syncApply;
+    private ICallGateProvider<bool>? openCalendar;
 
     public Plugin()
     {
@@ -456,6 +457,8 @@ public sealed class Plugin : IDalamudPlugin
             this.syncRead.RegisterFunc(this.OnSyncRead);
             this.syncApply = PluginInterface.GetIpcProvider<byte[], string, bool>("ShoutCalendar.Sync.Apply");
             this.syncApply.RegisterFunc(this.OnSyncApply);
+            this.openCalendar = PluginInterface.GetIpcProvider<bool>("ShoutCalendar.Open");
+            this.openCalendar.RegisterFunc(this.OnOpenCalendar);
         }
         catch (Exception exception)
         {
@@ -471,6 +474,7 @@ public sealed class Plugin : IDalamudPlugin
         this.syncIngest?.UnregisterFunc();
         this.syncRead?.UnregisterFunc();
         this.syncApply?.UnregisterFunc();
+        this.openCalendar?.UnregisterFunc();
         this.syncBook?.Detach();
         SyncGate.Detach();
     }
@@ -517,6 +521,12 @@ public sealed class Plugin : IDalamudPlugin
         if (!SyncGate.AllowRead(signature) || this.syncBook is null)
             return "";
         return this.syncBook.ToJson();
+    }
+
+    private bool OnOpenCalendar()
+    {
+        this.OpenMain();
+        return true;
     }
 
     private bool OnSyncApply(byte[] signature, string json)
