@@ -181,6 +181,115 @@ public class HarvestTests
     }
 
     [Fact]
+    public void SplitLinesFromOnePlayerBecomeOneInviteOnTheNamedWorld()
+    {
+        var session = new CalendarSession(new DateOnly(2026, 9, 27));
+        session.Places = new PlaceCatalog(["The Goblet", "Limsa Lominsa"]);
+        var when = new DateTimeOffset(new DateTime(2026, 9, 27, 18, 0, 0));
+        Assert.False(session.TryAddShout("Any events going on today?", ShoutHarvest.ShoutChannel, when, "Natsuki Sasahara"));
+        Assert.False(session.TryAddShout(
+            "Bring your black eyeliner, broken hearts and emo anthems! Tonight is having Emo Night!",
+            ShoutHarvest.ShoutChannel,
+            when.AddSeconds(5),
+            "Femboi JeesusGoblin"));
+        Assert.True(session.TryAddShout(
+            "7 PM EST/ Crystal Zalera Goblet W7 P5/ glam contest",
+            ShoutHarvest.ShoutChannel,
+            when.AddSeconds(20),
+            "Femboi JeesusGoblin"));
+
+        var entry = Assert.Single(session.Log.Entries);
+        Assert.Equal(new TimeOnly(19, 0), entry.Time);
+        Assert.Equal(new DateOnly(2026, 9, 27), entry.Date);
+        Assert.Equal(7, entry.Ward);
+        Assert.Contains("plot 5", entry.Place, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Goblet", entry.Place, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Zalera", entry.Server, StringComparison.Ordinal);
+        Assert.Contains("Emo Night", entry.EventText, StringComparison.Ordinal);
+        Assert.DoesNotContain("Any events", entry.EventText, StringComparison.Ordinal);
+        Assert.Equal("Zalera", SyncAnnouncement.FromLocal(entry, "Mateus").World);
+
+        var crystalOnly = ShoutHarvest.TryHarvest("7 PM at the Goblet on Crystal", ShoutHarvest.ShoutChannel, when, session.Places, aggressive: true);
+        Assert.NotNull(crystalOnly);
+        Assert.Equal("Mateus", SyncAnnouncement.FromLocal(crystalOnly, "Mateus").World);
+    }
+
+    [Fact]
+    public void ABirthdayShoutWithAWardIsKept()
+    {
+        var places = new PlaceCatalog(["The Goblet"]);
+        var when = new DateTimeOffset(new DateTime(2026, 9, 27, 18, 0, 0));
+        var entry = ShoutHarvest.TryHarvest(
+            "Tonight: Flying HIGH for EGGYs Birthday. Wings Up at 8 PM ET. Crystal, Zalera, Goblet, W17, P60",
+            ShoutHarvest.ShoutChannel,
+            when,
+            places,
+            aggressive: true);
+        Assert.NotNull(entry);
+        Assert.Equal(17, entry.Ward);
+        Assert.Contains("plot 60", entry.Place, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Goblet", entry.Place, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Zalera", entry.Server, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void InformedaholicAcceptsWhatTheFilterKeeps()
+    {
+        var session = new CalendarSession(DateOnly.FromDateTime(ShoutAt.UtcDateTime));
+        session.Informedaholic = true;
+        Assert.False(session.TryAddShout("hello", ShoutHarvest.ShoutChannel, ShoutAt, "Mina"));
+        Assert.True(session.TryAddShout("Maps at 8:00pm ward 13", ShoutHarvest.ShoutChannel, ShoutAt, "Mina"));
+        var entry = Assert.Single(session.Log.Entries);
+        Assert.True(entry.Accepted);
+
+        session.Informedaholic = false;
+        Assert.True(session.TryAddShout("tomorrow at 6:30 in ward 4", ShoutHarvest.ShoutChannel, ShoutAt.AddMinutes(2), "Mina"));
+        Assert.Contains(session.Log.Entries, row => !row.Accepted);
+        Assert.Equal(1, session.Log.AcceptPending());
+        Assert.DoesNotContain(session.Log.Entries, row => !row.Accepted);
+    }
+
+    [Fact]
+    public void SharedEventsRequireTwoOfThreeEvenWhenTheLocalFilterIsOff()
+    {
+        var places = new PlaceCatalog(["The Source"]);
+        var session = new CalendarSession(DateOnly.FromDateTime(ShoutAt.UtcDateTime));
+        session.Places = places;
+        session.AggressiveFilter = false;
+        Assert.True(session.TryAddShout("went to the source", ShoutHarvest.ShoutChannel, ShoutAt, "Tester"));
+        Assert.False(ShoutHarvest.IsSharedEvent("went to the source", ShoutHarvest.ShoutChannel, ShoutAt, places));
+        Assert.False(ShoutHarvest.IsSharedEvent("starting at 8:00pm", ShoutHarvest.ShoutChannel, ShoutAt, places));
+        Assert.False(ShoutHarvest.IsSharedEvent("hello there", SharePolicy.YellChannel, ShoutAt, places));
+        Assert.False(ShoutHarvest.IsSharedEvent("tomorrow at 6:30", 10, ShoutAt, places));
+        Assert.True(ShoutHarvest.IsSharedEvent("Maps at 8:00pm ward 13", ShoutHarvest.ShoutChannel, ShoutAt, places));
+        Assert.True(ShoutHarvest.IsSharedEvent("tomorrow at 6:30", SharePolicy.YellChannel, ShoutAt, places));
+    }
+
+    [Fact]
+    public void RightNowAndAMisspelledLimsaAreAnInvite()
+    {
+        var places = new PlaceCatalog(["Limsa Lominsa Lower Decks", "Limsa Lominsa", "The Goblet"]);
+        var when = new DateTimeOffset(new DateTime(2026, 9, 27, 19, 42, 0));
+        var entry = ShoutHarvest.TryHarvest(
+            "Come join me on a day of fun, in Limsa Lomniski right",
+            ShoutHarvest.FreeCompanyChannel,
+            when,
+            places,
+            aggressive: true);
+
+        Assert.NotNull(entry);
+        Assert.Equal(new TimeOnly(19, 42), entry.Time);
+        Assert.Equal(new DateOnly(2026, 9, 27), entry.Date);
+        Assert.Contains("Limsa Lominsa", entry.Place);
+        Assert.DoesNotContain("Lower Decks", entry.Place);
+
+        Assert.Null(ShoutHarvest.TryHarvest("nowadays in Limsa", ShoutHarvest.ShoutChannel, when, places, aggressive: true));
+        var clock = ShoutHarvest.TryHarvest("8:00pm right now at the Goblet", ShoutHarvest.ShoutChannel, when, places, aggressive: true);
+        Assert.NotNull(clock);
+        Assert.Equal(new TimeOnly(20, 0), clock.Time);
+    }
+
+    [Fact]
     public void AggressiveFilterKeepsTwoOfDateTimeAndPlace()
     {
         Assert.Null(ShoutHarvest.TryHarvest("starting at 8:00pm", ShoutHarvest.ShoutChannel, ShoutAt, aggressive: true));

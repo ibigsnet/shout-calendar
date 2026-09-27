@@ -1,7 +1,7 @@
 namespace ShoutCalendar.Core;
 
 /// <summary>
-/// Detected shouts. A new shout is pending until <see cref="Accept"/>. Nothing is accepted in bulk.
+/// Detected shouts. A new shout is pending until <see cref="Accept"/>. <see cref="AcceptPending"/> accepts the ones already waiting.
 /// </summary>
 public sealed class CalendarLog
 {
@@ -16,6 +16,22 @@ public sealed class CalendarLog
         if (string.IsNullOrEmpty(entry.Id))
             entry = entry with { Id = Guid.NewGuid().ToString("N"), Accepted = false };
         this.entries.Add(Stamp(entry));
+        return true;
+    }
+
+    public bool Rewrite(string id, CalendarEntry incoming)
+    {
+        var index = this.entries.FindIndex(entry => entry.Id == id);
+        if (index < 0)
+            return false;
+        var current = this.entries[index];
+        this.entries[index] = Stamp(incoming with
+        {
+            Id = current.Id,
+            Accepted = current.Accepted,
+            Sender = string.IsNullOrWhiteSpace(incoming.Sender) ? current.Sender : incoming.Sender,
+            NoteUpdated = current.NoteUpdated,
+        });
         return true;
     }
 
@@ -71,6 +87,20 @@ public sealed class CalendarLog
             return false;
         this.entries[index] = this.entries[index] with { Accepted = true };
         return true;
+    }
+
+    public int AcceptPending()
+    {
+        var count = 0;
+        for (var i = 0; i < this.entries.Count; i++)
+        {
+            if (this.entries[i].Accepted)
+                continue;
+            this.entries[i] = this.entries[i] with { Accepted = true };
+            count++;
+        }
+
+        return count;
     }
 
     public int ExpireUnaccepted(DateTimeOffset now, int holdDays)

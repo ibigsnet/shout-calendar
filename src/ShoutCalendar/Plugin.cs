@@ -30,6 +30,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IFramework Framework { get; private set; } = null!;
     [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
     [PluginService] internal static IPlayerState PlayerState { get; private set; } = null!;
+    [PluginService] internal static IAetheryteList AetheryteList { get; private set; } = null!;
 
     private readonly PluginConfig config;
     private readonly CalendarSession session;
@@ -40,6 +41,8 @@ public sealed class Plugin : IDalamudPlugin
     private readonly Dictionary<string, uint> questIds = new(StringComparer.OrdinalIgnoreCase);
     private bool questsScanned;
     private DateTime? alarmMinute;
+    private readonly HashSet<string> alarmSeen = new();
+    private bool alarmSeeded;
     private SyncBook? syncBook;
     private ICallGateProvider<byte[], string, bool>? syncAttach;
     private ICallGateProvider<byte[], bool>? syncDetach;
@@ -48,6 +51,9 @@ public sealed class Plugin : IDalamudPlugin
     private ICallGateProvider<byte[], string>? syncRead;
     private ICallGateProvider<byte[], string, bool>? syncApply;
     private ICallGateProvider<bool>? openCalendar;
+    private readonly CancellationTokenSource relayCancel = new();
+    private Task? relayWatch;
+    private string relaySeen = "";
 
     public Plugin()
     {
@@ -69,6 +75,9 @@ public sealed class Plugin : IDalamudPlugin
         this.session.UseChannels(this.config.WatchedChannels);
         this.session.UnacceptedHoldDays = this.config.UnacceptedHoldDays < 1 ? 14 : this.config.UnacceptedHoldDays;
         this.session.AggressiveFilter = this.config.AggressiveFilter;
+        this.session.Informedaholic = this.config.Informedaholic;
+        this.session.RememberLinkChoice = this.config.RememberLinkChoice;
+        this.session.OpenRememberedLinks = this.config.OpenRememberedLinks;
         this.session.AlarmAccepted = this.config.AlarmAccepted;
         this.session.AlarmUnaccepted = this.config.AlarmUnaccepted;
         this.session.AcceptedSound = EventAlarm.ClampSound(this.config.AcceptedSound);
@@ -80,7 +89,7 @@ public sealed class Plugin : IDalamudPlugin
         this.session.AlarmResets = this.config.AlarmResets;
         this.session.PendingColor = Shown(this.config.PendingColor, new Vector4(0.93f, 0.62f, 0.12f, 0.95f));
         this.session.AcceptedColor = Shown(this.config.AcceptedColor, new Vector4(0.12f, 0.48f, 0.24f, 0.95f));
-        this.session.TodayColor = Shown(this.config.TodayColor, new Vector4(0.183f, 0.183f, 0.183f, 1f));
+        this.session.TodayColor = Shown(this.config.TodayColor, new Vector4(1f, 1f, 1f, 0.19f));
         this.session.CrystalColor = Shown(this.config.CrystalColor, new Vector4(0.18f, 0.52f, 0.86f, 0.95f));
         this.session.CactusColor = Shown(this.config.CactusColor, new Vector4(0.55f, 0.78f, 0.22f, 0.95f));
         this.session.EventColor = Shown(this.config.EventColor, new Vector4(0f, 0f, 1f, 0.64f));
@@ -110,10 +119,22 @@ public sealed class Plugin : IDalamudPlugin
         Framework.Update += this.OnFramework;
         this.RegisterSyncHook();
         this.ImportLogs();
+        this.relayWatch = Task.Run(() => this.WatchRelay(this.relayCancel.Token));
     }
 
     public void Dispose()
     {
+        this.relayCancel.Cancel();
+        try
+        {
+            this.relayWatch?.Wait(TimeSpan.FromSeconds(1));
+        }
+        catch (AggregateException)
+        {
+            // The status check is stopping.
+        }
+
+        this.relayCancel.Dispose();
         this.UnregisterSyncHook();
         Framework.Update -= this.OnFramework;
         ChatGui.ChatMessage -= this.OnChat;
@@ -144,7 +165,9 @@ public sealed class Plugin : IDalamudPlugin
             this.Save();
         this.window.IsOpen = true;
         ChatGui.Print(added
-            ? "Shout Calendar kept that as a pending shout."
+            ? this.session.Informedaholic
+                ? "Shout Calendar accepted that invite."
+                : "Shout Calendar kept that as a pending shout."
             : this.session.AggressiveFilter
                 ? "Shout Calendar did not keep that. Aggressive filter needs two of a date, a time, and a place."
                 : "Shout Calendar did not keep that. It needs a time or a place.");
@@ -185,6 +208,7 @@ public sealed class Plugin : IDalamudPlugin
         if (this.alarmMinute != minute)
             this.alarmMinute = minute;
 
+        this.RingNewlyAccepted(hits, now);
         foreach (var hit in hits)
         {
             var entry = this.session.Log.Entries.FirstOrDefault(candidate => candidate.Id == hit.Id);
@@ -192,6 +216,62 @@ public sealed class Plugin : IDalamudPlugin
                 continue;
             this.Announce(entry, hit.Accepted);
         }
+    }
+
+    private void RingNewlyAccepted(IReadOnlyList<EventAlarm.Hit> already, DateTime now)
+    {
+        var due = new List<CalendarEntry>();
+        void Consider(CalendarEntry entry, string key)
+        {
+            if (string.IsNullOrEmpty(entry.Id) || !this.alarmSeen.Add(key))
+                return;
+            if (!this.alarmSeeded || !this.session.AlarmAccepted)
+                return;
+            if (already.Any(hit => hit.Id == entry.Id))
+                return;
+            if (EventAlarm.AlreadyDue(entry, now, this.session.AlarmMinutesBefore))
+                due.Add(entry);
+        }
+
+        foreach (var entry in this.session.Log.Entries)
+        {
+            if (entry.Accepted)
+                Consider(entry, "local:" + entry.Id);
+        }
+
+        if (this.syncBook is SyncBook book)
+        {
+            foreach (var item in book.Events)
+            {
+                if (!item.Accepted || string.IsNullOrEmpty(item.Id))
+                    continue;
+                if (!DateOnly.TryParseExact(item.Date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day))
+                    continue;
+                if (!TimeOnly.TryParseExact(item.Time, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var time))
+                    continue;
+                Consider(
+                    new CalendarEntry(day, time, null, null, item.World, "", item.Text, "", true, item.Id, default),
+                    "sync:" + item.Id);
+            }
+        }
+
+        if (!this.alarmSeeded)
+        {
+            this.alarmSeeded = true;
+            return;
+        }
+
+        if (due.Count == 0)
+            return;
+        foreach (var entry in due)
+        {
+            var when = entry.Time?.ToString("HH:mm", CultureInfo.InvariantCulture) ?? "";
+            var place = string.IsNullOrWhiteSpace(entry.Place) ? "" : " " + entry.Place;
+            var note = entry.EventText.Length > 80 ? entry.EventText[..80] : entry.EventText;
+            ChatGui.Print($"Shout Calendar: accepted {when}{place}. {note}");
+        }
+
+        this.PlayAlarm(this.session.AcceptedSound, this.session.AcceptedSoundFile);
     }
 
     private void Announce(CalendarEntry entry, bool accepted)
@@ -333,6 +413,9 @@ public sealed class Plugin : IDalamudPlugin
         this.config.WatchedChannels = this.session.Channels.Order().ToList();
         this.config.UnacceptedHoldDays = this.session.UnacceptedHoldDays < 1 ? 14 : this.session.UnacceptedHoldDays;
         this.config.AggressiveFilter = this.session.AggressiveFilter;
+        this.config.Informedaholic = this.session.Informedaholic;
+        this.config.RememberLinkChoice = this.session.RememberLinkChoice;
+        this.config.OpenRememberedLinks = this.session.OpenRememberedLinks;
         this.config.AlarmAccepted = this.session.AlarmAccepted;
         this.config.AlarmUnaccepted = this.session.AlarmUnaccepted;
         this.config.AcceptedSound = EventAlarm.ClampSound(this.session.AcceptedSound);
@@ -503,8 +586,55 @@ public sealed class Plugin : IDalamudPlugin
     {
         if (!SyncGate.AllowRead(signature) || this.syncBook is null)
             return "";
-        var rows = SyncExport.FromLocal(this.syncBook, this.session.Log.Entries);
+        var rows = SyncExport.FromLocal(this.syncBook, this.session.Log.Entries, this.session.Places);
         return System.Text.Encoding.UTF8.GetString(RelayCodec.EncodeList(rows));
+    }
+
+    private async Task WatchRelay(CancellationToken token)
+    {
+        while (!token.IsCancellationRequested)
+        {
+            try
+            {
+                this.ProbeRelay();
+            }
+            catch (Exception exception)
+            {
+                Log.Debug(exception, "Relay status was not updated.");
+            }
+
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(10), token);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+        }
+    }
+
+    private void ProbeRelay()
+    {
+        var book = this.syncBook;
+        if (book is null || !SyncGate.IsAttached)
+            return;
+        var host = book.RelayHost ?? "";
+        var port = book.RelayPort;
+        var key = string.Create(CultureInfo.InvariantCulture, $"{host}\n{port}\n{book.MirrorRelay}");
+        if (!string.Equals(key, this.relaySeen, StringComparison.Ordinal))
+        {
+            this.relaySeen = key;
+            book.RelayStatus = port < 1 || string.IsNullOrWhiteSpace(host) ? "" : RelayReach.Resolving;
+        }
+
+        if (port < 1 || string.IsNullOrWhiteSpace(host))
+            return;
+        var status = RelayReach.Read(host, port, book.MirrorRelay);
+        if (this.syncBook is SyncBook current
+            && string.Equals(current.RelayHost, host, StringComparison.Ordinal)
+            && current.RelayPort == port)
+            current.RelayStatus = status;
     }
 
     private string OnSyncIngest(byte[] signature, int openConnections, string json)
@@ -512,7 +642,7 @@ public sealed class Plugin : IDalamudPlugin
         if (!SyncGate.AllowWrite(signature) || this.syncBook is null)
             return RelayProtocol.Denied;
         var rows = RelayCodec.DecodeList(System.Text.Encoding.UTF8.GetBytes(json ?? ""));
-        var added = this.syncBook.Ingest(signature, rows, openConnections);
+        var added = this.syncBook.Ingest(signature, rows, openConnections, this.session.Places);
         return added < 0 ? RelayProtocol.Denied : RelayProtocol.Stored;
     }
 

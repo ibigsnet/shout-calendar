@@ -60,6 +60,20 @@ public class AlarmTests
     }
 
     [Fact]
+    public void AcceptingACurrentOrPastEventIsAlreadyDue()
+    {
+        var start = At;
+        var accepted = AcceptedAt(start);
+
+        Assert.True(EventAlarm.AlreadyDue(accepted, start.AddMinutes(5), 15));
+        Assert.True(EventAlarm.AlreadyDue(accepted, start.AddMinutes(-5), 15));
+        Assert.False(EventAlarm.AlreadyDue(accepted, start.AddMinutes(-20), 15));
+        Assert.False(EventAlarm.AlreadyDue(accepted, start.AddMinutes(20), 15));
+        Assert.False(EventAlarm.AlreadyDue(accepted, start.AddDays(1), 15));
+        Assert.False(EventAlarm.AlreadyDue(accepted with { Time = null }, start, 15));
+    }
+
+    [Fact]
     public void AMissingClockDoesNotRing()
     {
         var entry = AcceptedAt(At) with { Time = null };

@@ -55,6 +55,18 @@ public class WiringTests
         Assert.Contains("SetScrollHereY(0.5f)", window, StringComparison.Ordinal);
         Assert.Contains("BeginCombo(\"##year\"", window, StringComparison.Ordinal);
         Assert.Contains("BeginCombo(\"##month\"", window, StringComparison.Ordinal);
+        Assert.Contains("Update Shout Calendar Sync to use this relay.", window, StringComparison.Ordinal);
+        Assert.Contains("BeginTabItem(\"Sync settings\")", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("sync-tabs", window, StringComparison.Ordinal);
+        Assert.Contains("Informedaholic: accept every invite you see", window, StringComparison.Ordinal);
+        Assert.Contains("Remember this choice##link-settings", window, StringComparison.Ordinal);
+        Assert.Contains("Remember this choice##link-popup", window, StringComparison.Ordinal);
+        Assert.Contains("Open this link in your browser?", window, StringComparison.Ordinal);
+        Assert.Contains("Informedaholic: accept every shared invite", window, StringComparison.Ordinal);
+        Assert.Contains("Speed (Mb/s)", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("Speed (MB/s)", window, StringComparison.Ordinal);
+        Assert.Contains("Country mirror", window, StringComparison.Ordinal);
+        Assert.Contains("RelayReach.Online", window, StringComparison.Ordinal);
     }
 
     [Fact]

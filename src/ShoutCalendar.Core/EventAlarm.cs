@@ -60,4 +60,29 @@ public static class EventAlarm
 
         return hits;
     }
+
+    /// <summary>The warning time is this minute or already past, so accepting the invite should ring now.</summary>
+    public static bool AlreadyDue(CalendarEntry entry, DateTime now, int minutesBefore)
+    {
+        if (entry.Time is not TimeOnly time)
+            return false;
+        if (minutesBefore < 0)
+            minutesBefore = 0;
+        var today = DateOnly.FromDateTime(now);
+        DateOnly day;
+        if (entry.Repeat is not null)
+        {
+            if (!EventRepeat.FallsOn(entry, today))
+                return false;
+            day = today;
+        }
+        else
+        {
+            day = entry.Date ?? today;
+        }
+
+        var start = day.ToDateTime(time);
+        var grace = Math.Max(minutesBefore, 1);
+        return now >= start.AddMinutes(-minutesBefore) && now <= start.AddMinutes(grace);
+    }
 }

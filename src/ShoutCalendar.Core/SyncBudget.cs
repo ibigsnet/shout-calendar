@@ -5,13 +5,13 @@ public sealed class SyncLimits
 {
     public int MaxConnections { get; set; } = 4;
 
-    public int BytesPerSecond { get; set; } = 65536;
+    public int BytesPerSecond { get; set; } = 1_000_000;
 
-    public int MaxStoredBytes { get; set; } = 1_048_576;
+    public int MaxStoredBytes { get; set; } = 32_000_000;
 
     public int MaxItemsPerTick { get; set; } = 32;
 
-    public int MaxMemoryBytes { get; set; } = 2_097_152;
+    public int MaxMemoryBytes { get; set; } = 64_000_000;
 
     public SyncLimits Clamp()
     {

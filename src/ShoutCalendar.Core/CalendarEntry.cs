@@ -18,4 +18,5 @@ public sealed record CalendarEntry(
     DateTimeOffset DetectedAt,
     EventRepeat? Repeat = null,
     int Channel = 0,
-    bool NoteUpdated = false);
+    bool NoteUpdated = false,
+    bool Manual = false);

@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -100,4 +102,73 @@ public static class SyncRelays
 
     public static bool IsPublic(string? host, int port) =>
         port == PublicPort && string.Equals(host, PublicHost, StringComparison.OrdinalIgnoreCase);
+}
+
+/// <summary>What the relay dropdown shows beside the selected relay.</summary>
+public static class RelayReach
+{
+    public const string Resolving = "Resolving";
+
+    public const string Online = "Online";
+
+    public const string Offline = "Offline";
+
+    public const string OutOfDate = "Out of date";
+
+    public const string ViaPublicRelay = "Via public relay";
+
+    public static string Prefer(string primary, bool mirror, bool primaryIsPublic, string publicStatus)
+    {
+        if (primary == Online || primary == OutOfDate)
+            return primary;
+        if (!mirror || primaryIsPublic)
+            return primary;
+        if (publicStatus == Online)
+            return ViaPublicRelay;
+        if (publicStatus == OutOfDate)
+            return OutOfDate;
+        return Offline;
+    }
+
+    public static string Read(string host, int port, bool mirror = false)
+    {
+        var primary = Probe(host, port);
+        if (primary == Online || primary == OutOfDate || !mirror || SyncRelays.IsPublic(host, port))
+            return primary;
+        return Prefer(primary, true, false, Probe(SyncRelays.PublicHost, SyncRelays.PublicPort));
+    }
+
+    private static string Probe(string host, int port)
+    {
+        if (string.IsNullOrWhiteSpace(host) || port < 1)
+            return Offline;
+        try
+        {
+            if (port == SyncRelays.PublicPort)
+                return ReadHttp($"https://{host}/v1/status");
+            using var client = new System.Net.Sockets.TcpClient();
+            if (!client.ConnectAsync(host, port).Wait(TimeSpan.FromSeconds(4)) || !client.Connected)
+                return Offline;
+            return Online;
+        }
+        catch (Exception)
+        {
+            return Offline;
+        }
+    }
+
+    public static string ReadHttp(string url)
+    {
+        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(4) };
+        var request = new HttpRequestMessage(HttpMethod.Post, url);
+        request.Headers.TryAddWithoutValidation("X-Sync-Protocol", RelayProtocol.Version.ToString(CultureInfo.InvariantCulture));
+        request.Headers.TryAddWithoutValidation("X-Sync-Signature", Convert.ToBase64String(new byte[64]));
+        request.Content = new ByteArrayContent(Encoding.UTF8.GetBytes("1"));
+        using var response = client.Send(request);
+        var status = response.Headers.TryGetValues("X-Sync-Status", out var values) ? values.FirstOrDefault() : "";
+        return Describe(status);
+    }
+
+    public static string Describe(string? status) =>
+        string.Equals(status, RelayProtocol.Upgrade, StringComparison.OrdinalIgnoreCase) ? OutOfDate : Online;
 }

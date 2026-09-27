@@ -74,7 +74,7 @@ public static class SharePolicy
 
 public static class SyncExport
 {
-    public static IReadOnlyList<SyncAnnouncement> FromLocal(SyncBook book, IEnumerable<CalendarEntry> local)
+    public static IReadOnlyList<SyncAnnouncement> FromLocal(SyncBook book, IEnumerable<CalendarEntry> local, PlaceCatalog? places = null)
     {
         var rows = new List<SyncAnnouncement>();
         foreach (var entry in local)
@@ -82,7 +82,10 @@ public static class SyncExport
             var kind = entry.NoteUpdated
                 ? ContributionKind.NoteUpdated
                 : entry.Accepted ? ContributionKind.Accepted : ContributionKind.Unaccepted;
-            if (!SharePolicy.ShouldContribute(entry.Channel, kind, book.Settings))
+            if (entry.Manual || !SharePolicy.ShouldContribute(entry.Channel, kind, book.Settings))
+                continue;
+            var when = entry.DetectedAt == default ? DateTimeOffset.UtcNow : entry.DetectedAt;
+            if (!ShoutHarvest.IsSharedEvent(entry.EventText, entry.Channel, when, places))
                 continue;
             rows.Add(SyncAnnouncement.FromLocal(entry, book.Worlds.Home));
         }

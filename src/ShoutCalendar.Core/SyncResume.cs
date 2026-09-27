@@ -48,7 +48,7 @@ public static class SyncResume
             return true;
         if (!string.IsNullOrWhiteSpace(snap.RelayHost) || snap.RelayPort > 0)
             return true;
-        if (!snap.ShowSync)
+        if (!snap.ShowSync || snap.Informedaholic || snap.MirrorRelay)
             return true;
         var settings = snap.Settings;
         if (settings is not null && (

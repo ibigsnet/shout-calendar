@@ -60,6 +60,14 @@ public static class ShoutHarvest
             return null;
 
         var clocks = ReadClocks(text);
+        var localNow = shoutTimestamp.ToLocalTime().DateTime;
+        DateOnly? nowDay = null;
+        if (clocks.Count == 0 && NowRegex.IsMatch(text))
+        {
+            clocks.Add(TimeOnly.FromDateTime(localNow));
+            nowDay = DateOnly.FromDateTime(localNow);
+        }
+
         var statedDate = ReadDate(text) ?? ReadRelativeDay(text, shoutTimestamp) ?? ReadWeekday(text, shoutTimestamp);
 
         int? ward = null;
@@ -107,6 +115,8 @@ public static class ShoutHarvest
         DateOnly? date = statedDate;
         if (repeat is not null)
             date = repeat.FirstOnOrAfter(statedDate ?? DateOnly.FromDateTime(shoutTimestamp.UtcDateTime));
+        else if (date is null && nowDay is not null)
+            date = nowDay;
         else if (date is null && clocks.Count > 0)
             date = DateOnly.FromDateTime(shoutTimestamp.UtcDateTime);
         TimeOnly? end = clocks.Count == 2 ? clocks[1] : null;
@@ -143,7 +153,19 @@ public static class ShoutHarvest
         return found;
     }
 
+    /// <summary>A shared shout or yell needs two of a date, a time, and a place. The local filter does not change this.</summary>
+    public static bool IsSharedEvent(string? text, int channel, DateTimeOffset when, PlaceCatalog? places = null)
+    {
+        if (channel is not SharePolicy.ShoutChannel and not SharePolicy.YellChannel)
+            return false;
+        return TryHarvest(text, channel, when, places, aggressive: true) is not null;
+    }
+
     public static bool IsWatched(int channel, IReadOnlySet<int>? channels = null) => ChatChannels.Allows(channel, channels);
+
+    private static readonly Regex NowRegex = new(
+        @"\b(?:right\s+now|now)\b|\bright\s*$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     private static readonly Regex RelativeDayRegex = new(
         @"\b(?<day>tomorrow|tonight|today)\b",

@@ -2,6 +2,7 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.ImGuiFileDialog;
 using Dalamud.Interface.Windowing;
+using Dalamud.Utility;
 using ShoutCalendar.Core;
 
 namespace ShoutCalendar;
@@ -27,6 +28,13 @@ public sealed class CalendarWindow : Window
     private int? folderDay;
     private DayLine? selectedLine;
     private string categoryDraft = "";
+    private string? pendingLink;
+    private bool linkRememberDraft;
+    private bool adding;
+    private string addNote = "";
+    private string addDate = "";
+    private string addTime = "";
+    private string addPlace = "";
 
     public CalendarWindow(
         CalendarSession session,
@@ -58,6 +66,7 @@ public sealed class CalendarWindow : Window
         this.DrawCalendar();
         this.DrawDayFolder();
         this.DrawClearPrompt();
+        this.DrawLinkPrompt();
         this.dialogs.Draw();
     }
 
@@ -93,22 +102,13 @@ public sealed class CalendarWindow : Window
                 ImGui.EndTabItem();
             }
 
-            ImGui.EndTabBar();
-        }
-
-        if (SyncGate.Panel is SyncBook)
-        {
-            ImGui.Spacing();
-            if (ImGui.BeginTabBar("sync-tabs"))
+            if (SyncGate.Panel is SyncBook && ImGui.BeginTabItem("Sync settings"))
             {
-                if (ImGui.BeginTabItem("Sync settings"))
-                {
-                    this.DrawSyncSettings();
-                    ImGui.EndTabItem();
-                }
-
-                ImGui.EndTabBar();
+                this.DrawSyncSettings();
+                ImGui.EndTabItem();
             }
+
+            ImGui.EndTabBar();
         }
 
         ImGui.EndChild();
@@ -125,6 +125,8 @@ public sealed class CalendarWindow : Window
 
         this.DrawHoldDays();
         this.DrawAggressiveFilter();
+        this.DrawInformedaholic();
+        this.DrawLinkChoice();
         this.DrawChannelOptions();
         this.DrawAlarms();
     }
@@ -136,7 +138,9 @@ public sealed class CalendarWindow : Window
         this.DrawWrappingButton("Clear all", rowRight, ref continued, () => this.prompt.Ask(ClearTarget.All));
         this.DrawWrappingButton("Clear accepted", rowRight, ref continued, () => this.prompt.Ask(ClearTarget.Accepted));
         this.DrawWrappingButton("Clear unaccepted", rowRight, ref continued, () => this.prompt.Ask(ClearTarget.Unaccepted));
+        this.DrawWrappingButton("Add event", rowRight, ref continued, () => this.adding = true);
         ImGui.Separator();
+        this.DrawAddEvent();
         ImGui.TextWrapped("Pending alerts show below.");
 
         foreach (var entry in this.session.Log.Entries.Where(entry => !entry.Accepted && this.IncludeLocal(entry)).ToList())
@@ -157,6 +161,7 @@ public sealed class CalendarWindow : Window
             if (!string.IsNullOrWhiteSpace(entry.Place))
                 ImGui.TextWrapped(entry.Place);
             ImGui.TextWrapped(entry.EventText);
+            this.DrawLinks(entry.EventText);
             if (ImGui.Button($"Edit##{entry.Id}"))
             {
                 var title = string.IsNullOrWhiteSpace(entry.Place) ? entry.EventText : entry.Place;
@@ -189,6 +194,8 @@ public sealed class CalendarWindow : Window
         var rows = book.Events
             .Where(item => item.IsSyncPending && item.World.Equals(book.Worlds.Selected, StringComparison.OrdinalIgnoreCase))
             .ToList();
+        if (rows.Count == 0 && book.Informedaholic)
+            return;
         ImGui.Separator();
         ImGui.TextWrapped($"Shared on {book.Worlds.Selected}");
         if (rows.Count == 0)
@@ -215,26 +222,15 @@ public sealed class CalendarWindow : Window
         ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 1f, 1f, 1f));
         ImGui.TextWrapped(line);
         ImGui.PopStyleColor();
+        this.DrawLinks(item.Text);
         if (!string.IsNullOrWhiteSpace(item.Category))
             ImGui.TextUnformatted(item.Category);
-        if (ImGui.BeginCombo($"Category##sync-cat-{item.Id}", string.IsNullOrWhiteSpace(item.Category) ? "Category" : item.Category))
-        {
-            foreach (var category in EventCategories.BuiltIn)
-            {
-                if (ImGui.Selectable($"{category}##{item.Id}-{category}", category == item.Category))
-                    book.SetCategory(item.Id, category);
-            }
-
-            ImGui.EndCombo();
-        }
-
-        ImGui.SetNextItemWidth(180f);
-        ImGui.InputText($"Category label##sync-label-{item.Id}", ref this.categoryDraft, 80);
-        ImGui.SameLine();
-        if (ImGui.SmallButton($"Set##sync-set-{item.Id}"))
-            book.SetCategory(item.Id, this.categoryDraft);
+        this.DrawSyncCategory(book, item);
         if (ImGui.SmallButton($"Accept##sync-accept-{item.Id}") && book.AcceptRemote(item.Id))
             this.categoryDraft = "";
+        ImGui.SameLine();
+        if (ImGui.SmallButton($"Delete##sync-row-{item.Id}"))
+            book.Dismiss(item.Id);
     }
 
     private void DrawResets()
@@ -349,6 +345,126 @@ public sealed class CalendarWindow : Window
         ImGui.TextWrapped("Off: a line is kept when it has a date, a time, or a place.");
         ImGui.TextWrapped("On: it needs two of those three, so a place name by itself is skipped.");
         ImGui.TextWrapped("Today, tonight, tomorrow, and a weekday such as next Tuesday count as a date.");
+        ImGui.TextWrapped("Now, right now, and a line that ends with right count as the current time.");
+        ImGui.TextWrapped("Lines from the same player on the same chat, up to a minute apart, are read as one invite.");
+    }
+
+    private void DrawInformedaholic()
+    {
+        var on = this.session.Informedaholic;
+        if (ImGui.Checkbox("Informedaholic: accept every invite you see##local-auto", ref on))
+        {
+            this.session.Informedaholic = on;
+            if (on)
+                this.session.Log.AcceptPending();
+            this.save();
+        }
+
+        ImGui.TextWrapped("Kept invites are accepted for you, so they skip the pending list. The filter still decides which lines are invites.");
+    }
+
+    private void DrawLinkChoice()
+    {
+        var remember = this.session.RememberLinkChoice;
+        if (ImGui.Checkbox("Remember this choice##link-settings", ref remember))
+        {
+            this.session.RememberLinkChoice = remember;
+            if (remember)
+                this.session.OpenRememberedLinks = true;
+            else
+                this.session.OpenRememberedLinks = false;
+            this.save();
+        }
+
+        if (!remember)
+            ImGui.TextWrapped("Each link asks before it opens.");
+        else if (this.session.OpenRememberedLinks)
+            ImGui.TextWrapped("Links open without asking.");
+        else
+            ImGui.TextWrapped("Links stay closed without asking.");
+    }
+
+    private void DrawLinks(string? text)
+    {
+        var links = LinkFinder.Find(text);
+        if (links.Count == 0)
+            return;
+        var rowRight = ImGui.GetCursorScreenPos().X + ImGui.GetContentRegionAvail().X;
+        var continued = false;
+        foreach (var link in links)
+        {
+            var label = link.Label.Length > 48 ? link.Label[..45] + "…" : link.Label;
+            this.DrawWrappingButton(label, rowRight, ref continued, () => this.AskLink(link.Url));
+        }
+    }
+
+    private void AskLink(string url)
+    {
+        if (!LinkFinder.IsHttp(url))
+            return;
+        if (this.session.RememberLinkChoice)
+        {
+            if (this.session.OpenRememberedLinks)
+                LaunchLink(url);
+            return;
+        }
+
+        this.pendingLink = url;
+        this.linkRememberDraft = false;
+    }
+
+    private void DrawLinkPrompt()
+    {
+        if (this.pendingLink is not null)
+            ImGui.OpenPopup("Open this link?##shout-link");
+
+        var open = this.pendingLink is not null;
+        if (!ImGui.BeginPopupModal("Open this link?##shout-link", ref open, ImGuiWindowFlags.AlwaysAutoResize))
+        {
+            if (!open)
+                this.pendingLink = null;
+            return;
+        }
+
+        ImGui.TextWrapped("Open this link in your browser?");
+        ImGui.TextWrapped(this.pendingLink ?? "");
+        ImGui.Checkbox("Remember this choice##link-popup", ref this.linkRememberDraft);
+        if (ImGui.Button("Open##link-open"))
+        {
+            this.FinishLink(true);
+            ImGui.CloseCurrentPopup();
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Cancel##link-cancel"))
+        {
+            this.FinishLink(false);
+            ImGui.CloseCurrentPopup();
+        }
+
+        ImGui.EndPopup();
+    }
+
+    private void FinishLink(bool open)
+    {
+        if (this.linkRememberDraft)
+        {
+            this.session.RememberLinkChoice = true;
+            this.session.OpenRememberedLinks = open;
+            this.save();
+        }
+
+        var url = this.pendingLink;
+        this.pendingLink = null;
+        if (open && url is not null)
+            LaunchLink(url);
+    }
+
+    private static void LaunchLink(string url)
+    {
+        if (!LinkFinder.IsHttp(url))
+            return;
+        Util.OpenLink(url);
     }
 
     private void DrawAlarms()
@@ -742,6 +858,7 @@ public sealed class CalendarWindow : Window
             ImGui.TextUnformatted(entry.Accepted ? "Accepted" : "Pending");
             ImGui.PopStyleColor();
             _ = fill;
+            this.DrawLinks(entry.EventText);
             this.DrawEdit(entry);
             if (ImGui.SmallButton($"Delete##detail-{entry.Id}"))
             {
@@ -1109,10 +1226,23 @@ public sealed class CalendarWindow : Window
             return;
         }
 
-        ImGui.TextUnformatted(this.prompt.Question);
+        var question = this.prompt.Question;
+        if (SyncGate.Panel is not null)
+            question += " Shared invites on this computer are included.";
+        ImGui.TextWrapped(question);
         if (ImGui.Button("Yes"))
         {
             this.prompt.AnswerYes(this.session.Log);
+            if (SyncGate.Panel is SyncBook cleared)
+            {
+                if (this.prompt.Target == ClearTarget.Accepted)
+                    cleared.DismissMatching(item => item.Accepted);
+                else if (this.prompt.Target == ClearTarget.Unaccepted)
+                    cleared.DismissMatching(item => item.IsSyncPending);
+                else
+                    cleared.DismissMatching(_ => true);
+            }
+
             this.save();
             ImGui.CloseCurrentPopup();
         }
@@ -1196,12 +1326,22 @@ public sealed class CalendarWindow : Window
         if (book is null)
             return;
 
-        ImGui.TextWrapped("Public Shout and Yell this calendar keeps are shared. Other chats stay on this computer. Accept adds a shared invite to your calendar.");
+        ImGui.TextWrapped("Public Shout and Yell this calendar keeps are shared. Other chats stay on this computer. Accept adds a shared invite to your calendar. A shout that names a world is shared on that world. Shout and Yell are heard only on the world you are standing on.");
+        var autoAccept = book.Informedaholic;
+        if (ImGui.Checkbox("Informedaholic: accept every shared invite##sync-auto", ref autoAccept))
+        {
+            book.Informedaholic = autoAccept;
+            if (autoAccept)
+                book.AcceptAllRemote();
+        }
+
+        ImGui.TextWrapped("Shared shouts and yells are accepted for you. They still have to be events.");
         var showSync = book.ShowSync;
         if (ImGui.Checkbox("Show sync events", ref showSync))
             book.ShowSync = showSync;
 
         var relay = book.RelayChoice == SyncRelays.CustomLabel ? SyncRelays.CustomLabel : SyncRelays.PublicLabel;
+        ImGui.SetNextItemWidth(180f);
         if (ImGui.BeginCombo("Relay", relay))
         {
             if (ImGui.Selectable(SyncRelays.PublicLabel, relay == SyncRelays.PublicLabel))
@@ -1224,6 +1364,15 @@ public sealed class CalendarWindow : Window
             ImGui.EndCombo();
         }
 
+        if (!string.IsNullOrEmpty(book.RelayStatus))
+        {
+            ImGui.SameLine();
+            ImGui.TextColored(RelayInk(book.RelayStatus), book.RelayStatus);
+        }
+
+        if (book.RelayStatus == RelayReach.OutOfDate)
+            ImGui.TextWrapped("Update Shout Calendar Sync to use this relay.");
+
         if (book.RelayChoice == SyncRelays.CustomLabel)
         {
             var host = book.RelayHost;
@@ -1232,6 +1381,10 @@ public sealed class CalendarWindow : Window
             var port = book.RelayPort;
             if (ImGui.InputInt("Relay port", ref port))
                 book.RelayPort = port < 1 ? 0 : port;
+            var mirror = book.MirrorRelay;
+            if (ImGui.Checkbox("Country mirror##sync-mirror", ref mirror))
+                book.MirrorRelay = mirror;
+            ImGui.TextWrapped("A private group stays on this relay. A country mirror is tried first, and sync uses the public relay when the mirror does not answer.");
         }
 
         ImGui.Separator();
@@ -1239,7 +1392,7 @@ public sealed class CalendarWindow : Window
         var hold = book.HoldOffSeconds;
         book.HoldOffSeconds = this.Limit("Hold off (seconds)", hold);
         book.Limits.MaxConnections = this.Limit("Connections", book.Limits.MaxConnections);
-        book.Limits.BytesPerSecond = this.MegabytesPerSecond(book.Limits.BytesPerSecond);
+        book.Limits.BytesPerSecond = this.MegabitsPerSecond(book.Limits.BytesPerSecond);
         book.Limits.MaxStoredBytes = this.Megabytes(book.Limits.MaxStoredBytes, "Stored size (MB)");
         book.Limits.MaxItemsPerTick = this.Limit("Items per tick", book.Limits.MaxItemsPerTick);
         book.Limits.MaxMemoryBytes = this.Megabytes(book.Limits.MaxMemoryBytes, "Memory (MB)");
@@ -1265,6 +1418,19 @@ public sealed class CalendarWindow : Window
         ImGui.EndChild();
     }
 
+    private static Vector4 RelayInk(string status)
+    {
+        if (status == RelayReach.Online)
+            return new Vector4(0.45f, 0.82f, 0.45f, 1f);
+        if (status == RelayReach.Offline)
+            return new Vector4(0.86f, 0.36f, 0.32f, 1f);
+        if (status == RelayReach.OutOfDate)
+            return new Vector4(0.95f, 0.55f, 0.22f, 1f);
+        if (status == RelayReach.ViaPublicRelay)
+            return new Vector4(0.45f, 0.72f, 0.95f, 1f);
+        return new Vector4(0.90f, 0.78f, 0.35f, 1f);
+    }
+
     private int Limit(string label, int value)
     {
         ImGui.SetNextItemWidth(140f);
@@ -1275,7 +1441,7 @@ public sealed class CalendarWindow : Window
 
     private int Megabytes(int bytes, string label)
     {
-        var megabytes = Math.Max(1, (bytes + 999_999) / 1_000_000);
+        var megabytes = Math.Max(1, bytes / 1_000_000);
         ImGui.SetNextItemWidth(140f);
         if (!ImGui.InputInt($"{label}##sync-mb-{label}", ref megabytes))
             return bytes;
@@ -1284,15 +1450,15 @@ public sealed class CalendarWindow : Window
         return megabytes * 1_000_000;
     }
 
-    private int MegabytesPerSecond(int bytesPerSecond)
+    private int MegabitsPerSecond(int bytesPerSecond)
     {
-        var megabytes = Math.Max(1, (bytesPerSecond + 999_999) / 1_000_000);
+        var megabits = Math.Max(1, (int)((long)bytesPerSecond * 8 / 1_000_000));
         ImGui.SetNextItemWidth(140f);
-        if (!ImGui.InputInt("Speed (MB/s)##sync-mbps", ref megabytes))
+        if (!ImGui.InputInt("Speed (Mb/s)##sync-mbps", ref megabits))
             return bytesPerSecond;
-        if (megabytes < 1)
-            megabytes = 1;
-        return megabytes * 1_000_000;
+        if (megabits < 1)
+            megabits = 1;
+        return megabits * 125_000;
     }
 
     private void DrawSyncDetail(DayLine line)
@@ -1306,10 +1472,121 @@ public sealed class CalendarWindow : Window
         }
 
         ImGui.TextWrapped(item.Text);
-        if (!string.IsNullOrWhiteSpace(item.Category))
-            ImGui.TextUnformatted(item.Category);
+        this.DrawLinks(item.Text);
+        this.DrawSyncCategory(book!, item);
         if (item.IsSyncPending && ImGui.SmallButton($"Accept##sync-detail-{item.Id}"))
             book!.AcceptRemote(item.Id);
+        if (item.IsSyncPending)
+            ImGui.SameLine();
+        if (ImGui.SmallButton($"Delete##sync-detail-{item.Id}") && book!.Dismiss(item.Id))
+            this.selectedLine = null;
+    }
+
+    private void DrawAddEvent()
+    {
+        if (!this.adding)
+            return;
+        ImGui.TextWrapped("This event stays on this computer. A shout or yell is what shares.");
+        ImGui.InputTextMultiline("Details##add-note", ref this.addNote, 4000, new Vector2(-1f, 90f));
+        if (ImGui.SmallButton("Read details##add-read"))
+            this.ReadAddedDetails();
+        ImGui.InputText("Date##add-date", ref this.addDate, 16);
+        ImGui.InputText("Time##add-time", ref this.addTime, 8);
+        ImGui.InputText("Location##add-place", ref this.addPlace, 200);
+        if (ImGui.SmallButton("Save##add-save") && this.SaveAdded())
+            this.adding = false;
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Cancel##add-cancel"))
+            this.adding = false;
+        ImGui.Separator();
+    }
+
+    private void ReadAddedDetails()
+    {
+        var parsed = ShoutHarvest.TryHarvest(
+            this.addNote,
+            ShoutHarvest.ShoutChannel,
+            DateTimeOffset.Now,
+            this.session.Places,
+            this.session.Channels,
+            this.session.HousingHint,
+            aggressive: false);
+        if (parsed is null)
+            return;
+        if (parsed.Date is DateOnly day)
+            this.addDate = day.ToString("yyyy-MM-dd");
+        if (parsed.Time is TimeOnly time)
+            this.addTime = time.ToString("HH:mm");
+        if (!string.IsNullOrWhiteSpace(parsed.Place))
+            this.addPlace = parsed.Place;
+    }
+
+    private bool SaveAdded()
+    {
+        var note = this.addNote.Trim();
+        var place = this.addPlace.Trim();
+        if (note.Length == 0 && place.Length == 0 && this.addDate.Trim().Length == 0 && this.addTime.Trim().Length == 0)
+            return false;
+        var parsed = ShoutHarvest.TryHarvest(
+            string.Join(' ', new[] { note, place, this.addDate, this.addTime }.Where(part => part.Trim().Length > 0)),
+            ShoutHarvest.ShoutChannel,
+            DateTimeOffset.Now,
+            this.session.Places,
+            this.session.Channels,
+            this.session.HousingHint,
+            aggressive: false);
+        DateOnly? date = parsed?.Date;
+        if (DateOnly.TryParseExact(this.addDate.Trim(), "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var typedDate))
+            date = typedDate;
+        TimeOnly? time = parsed?.Time;
+        if (TimeOnly.TryParseExact(this.addTime.Trim(), "HH:mm", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var typedTime))
+            time = typedTime;
+        var entry = new CalendarEntry(
+            date,
+            time,
+            string.IsNullOrWhiteSpace(this.addTime) ? parsed?.End : null,
+            parsed?.Ward,
+            parsed?.Server,
+            place.Length > 0 ? place : parsed?.Place ?? "",
+            note.Length > 0 ? note : parsed?.EventText ?? place,
+            "",
+            true,
+            Guid.NewGuid().ToString("N"),
+            DateTimeOffset.UtcNow,
+            parsed?.Repeat,
+            0,
+            false,
+            true);
+        if (!this.session.Log.Add(entry))
+            return false;
+        if (date is DateOnly shown)
+            this.session.Show(shown);
+        this.addNote = "";
+        this.addDate = "";
+        this.addTime = "";
+        this.addPlace = "";
+        this.save();
+        return true;
+    }
+
+    private void DrawSyncCategory(SyncBook book, SyncAnnouncement item)
+    {
+        if (ImGui.BeginCombo($"Category##sync-cat-{item.Id}", string.IsNullOrWhiteSpace(item.Category) ? "Category" : item.Category))
+        {
+            foreach (var category in EventCategories.BuiltIn)
+            {
+                if (ImGui.Selectable($"{category}##{item.Id}-{category}", category == item.Category))
+                    book.SetCategory(item.Id, category);
+            }
+
+            ImGui.EndCombo();
+        }
+
+        ImGui.SetNextItemWidth(180f);
+        ImGui.InputText($"Category label##sync-label-{item.Id}", ref this.categoryDraft, 80);
+        ImGui.SameLine();
+        if (ImGui.SmallButton($"Set##sync-set-{item.Id}"))
+            book.SetCategory(item.Id, this.categoryDraft);
     }
 
     private IReadOnlySet<string> VisibleResets() =>

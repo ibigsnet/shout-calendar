@@ -1,6 +1,6 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <Version>0.1.18</Version>
+    <Version>0.1.19</Version>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -10,16 +10,16 @@
     <RepoUrl>https://github.com/ibigsnet/shout-calendar</RepoUrl>
     <Tags>utility</Tags>
     <Punchline>Turns FFXIV chat invites into a month calendar you accept yourself.</Punchline>
-    <Description>Shout Calendar listens to the chats you choose and keeps event invites on a month calendar until you accept them. Nothing is accepted for you, and nothing is sent to other players.
+    <Description>Shout Calendar listens to the chats you choose and keeps event invites on a month calendar until you accept them. This plugin does not send anything to other players. Shout Calendar Sync is separate, and only public Shout and Yell are shared.
 
-It understands clocks, dates, today, tonight, tomorrow, next Tuesday, the Tuesday after next, every Tuesday, every other week, and the 1st and last Wednesday of a month. Places include wards, plots such as W3P26, coordinates, worlds, and names from the game's own data. A ward heard in a city guesses that city's housing district.
+It understands clocks, dates, today, tonight, tomorrow, now, next Tuesday, the Tuesday after next, every Tuesday, every other week, and the 1st and last Wednesday of a month. A few lines from the same player a minute apart are one invite. Places include wards, plots such as W3P26, coordinates, worlds, and names from the game's own data. A ward heard in a city guesses that city's housing district. The aggressive filter is on: a line needs two of a date, a time, and a place.
 
-Save accepts a pending invite. Click a block to edit it under the month, or click the day number for that day's full list. Coordinates open the map with a flag. Known quest givers do the same, and quest names drop a quest link into chat.
+Add event keeps a pasted or typed invite on this computer. Save accepts a pending invite. Click a block to edit it under the month, or click the day number for that day's full list. Links and discord.gg addresses can be opened after a confirm. Coordinates open the map with a flag. Known quest givers do the same, and quest names drop a quest link into chat.
 
-The Resets tab adds Jumbo Cactpot, the weekly reset, and limited events such as A Nocturne for Heroes. Resets that share a clock share one line. Alarms play a chat sound from se.1 to se.16, or a WAV you choose. Colors are yours to set.
+The Resets tab adds Jumbo Cactpot, the weekly reset, and limited events such as A Nocturne for Heroes. Those three start on. Resets that share a clock share one line. Alarms play a chat sound from se.1 to se.16, or a WAV you choose, 15 minutes before an accepted event by default. Unaccepted invites are held for 1 day. Colors are yours to set. Today starts as a light wash.
 
 /shoutcalendar opens the calendar. /shoutcalendar test checks a line on your machine and does not send chat.</Description>
-    <Changelog>The month header has a month list and a year list. The year list opens on the current year. Shout Calendar Sync can attach.</Changelog>
+    <Changelog>Add event stays on this computer. Shared invites can be deleted here without removing them for other people. Today starts as a light wash. The written description matches the current defaults.</Changelog>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\ShoutCalendar.Core\ShoutCalendar.Core.csproj" />

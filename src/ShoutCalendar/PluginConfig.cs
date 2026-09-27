@@ -22,6 +22,12 @@ public sealed class PluginConfig : IPluginConfiguration
     /// <summary>When set, a new line is kept only if two of date, time, and place are present.</summary>
     public bool AggressiveFilter { get; set; } = true;
 
+    public bool Informedaholic { get; set; }
+
+    public bool RememberLinkChoice { get; set; }
+
+    public bool OpenRememberedLinks { get; set; }
+
     public bool AlarmAccepted { get; set; } = true;
 
     public bool AlarmUnaccepted { get; set; }
@@ -44,7 +50,7 @@ public sealed class PluginConfig : IPluginConfiguration
 
     public Vector4 AcceptedColor { get; set; } = new(0.12f, 0.48f, 0.24f, 0.95f);
 
-    public Vector4 TodayColor { get; set; } = new(0.183f, 0.183f, 0.183f, 1f);
+    public Vector4 TodayColor { get; set; } = new(1f, 1f, 1f, 0.19f);
 
     public Vector4 CrystalColor { get; set; } = new(0.18f, 0.52f, 0.86f, 0.95f);
 
@@ -110,6 +116,8 @@ public sealed class StoredEvent
 
     public bool NoteUpdated { get; set; }
 
+    public bool Manual { get; set; }
+
     public static StoredEvent From(CalendarEntry entry)
     {
         return new StoredEvent
@@ -130,6 +138,7 @@ public sealed class StoredEvent
             Repeat = entry.Repeat?.Store(),
             Channel = entry.Channel,
             NoteUpdated = entry.NoteUpdated,
+            Manual = entry.Manual,
         };
     }
 
@@ -174,7 +183,8 @@ public sealed class StoredEvent
                 : default,
             EventRepeat.Parse(stored.Repeat),
             stored.Channel,
-            stored.NoteUpdated);
+            stored.NoteUpdated,
+            stored.Manual);
         return true;
     }
 }

@@ -16,6 +16,8 @@ public sealed class CalendarSession
 
     public CalendarLog Log { get; } = new();
 
+    private readonly ChatBurst burst = new();
+
     public PlaceCatalog Places { get; set; } = PlaceCatalog.Empty;
 
     public HashSet<int> Channels { get; } = new(ChatChannels.DefaultIds);
@@ -26,6 +28,15 @@ public sealed class CalendarSession
 
     /// <summary>When set, a line is kept only if two of date, time, and place are present.</summary>
     public bool AggressiveFilter { get; set; } = true;
+
+    /// <summary>When set, a kept invite is accepted instead of waiting on the pending list.</summary>
+    public bool Informedaholic { get; set; }
+
+    /// <summary>When set, link clicks use <see cref="OpenRememberedLinks"/> and skip the prompt.</summary>
+    public bool RememberLinkChoice { get; set; }
+
+    /// <summary>The remembered prompt answer. Used only while <see cref="RememberLinkChoice"/> is set.</summary>
+    public bool OpenRememberedLinks { get; set; }
 
     public bool AlarmAccepted { get; set; } = true;
 
@@ -131,8 +142,9 @@ public sealed class CalendarSession
 
     public bool TryAddShout(string? text, int channel, DateTimeOffset shoutTimestamp, string? sender = null)
     {
+        var combined = this.burst.Push(sender, channel, shoutTimestamp, text, out var replaceId);
         var detected = ShoutHarvest.TryHarvest(
-            text,
+            combined,
             channel,
             shoutTimestamp,
             this.Places,
@@ -141,6 +153,19 @@ public sealed class CalendarSession
             this.AggressiveFilter);
         if (detected is null)
             return false;
-        return this.Log.Add(detected with { Sender = sender?.Trim() ?? "" });
+        detected = detected with { Sender = sender?.Trim() ?? "" };
+        if (replaceId is not null && this.Log.Rewrite(replaceId, detected))
+        {
+            this.burst.Remember(replaceId);
+            return true;
+        }
+
+        if (!this.Log.Add(detected))
+            return false;
+        var id = this.Log.Entries[^1].Id;
+        this.burst.Remember(id);
+        if (this.Informedaholic)
+            this.Log.Accept(id);
+        return true;
     }
 }

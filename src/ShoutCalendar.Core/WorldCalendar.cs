@@ -27,6 +27,21 @@ public static class PlayableWorlds
 
         return false;
     }
+
+    /// <summary>The first playable world named in a place list. Data-center names are skipped.</summary>
+    public static bool TryNamedWorld(string? serverField, out string world)
+    {
+        world = "";
+        if (string.IsNullOrWhiteSpace(serverField))
+            return false;
+        foreach (var part in serverField.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (TryCanonical(part, out world))
+                return true;
+        }
+
+        return false;
+    }
 }
 
 /// <summary>

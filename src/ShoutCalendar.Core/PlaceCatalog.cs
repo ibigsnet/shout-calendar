@@ -49,6 +49,59 @@ public sealed class PlaceCatalog
             }
         }
 
+        foreach (var name in this.namesLongestFirst.OrderBy(name => name.Length))
+        {
+            var space = name.IndexOf(' ');
+            if (space < 5)
+                continue;
+            var head = name[..space];
+            if (found.Any(hit => hit.StartsWith(head, StringComparison.OrdinalIgnoreCase)))
+                continue;
+            if (!ContainsWord(text, head))
+                continue;
+            found.Add(name);
+        }
+
+        foreach (var name in this.namesLongestFirst.OrderBy(name => name.Length))
+        {
+            if (!name.StartsWith("The ", StringComparison.OrdinalIgnoreCase))
+                continue;
+            var rest = name[4..];
+            if (rest.Length < 4 || found.Contains(name) || !ContainsPhrase(text, rest))
+                continue;
+            found.Add(name);
+        }
+
         return found;
+    }
+
+    private static bool ContainsPhrase(string text, string phrase)
+    {
+        var at = text.IndexOf(phrase, StringComparison.OrdinalIgnoreCase);
+        if (at < 0)
+            return false;
+        var end = at + phrase.Length;
+        var leftFree = at == 0 || !char.IsLetterOrDigit(text[at - 1]);
+        var rightFree = end >= text.Length || !char.IsLetterOrDigit(text[end]);
+        return leftFree && rightFree;
+    }
+
+    private static bool ContainsWord(string text, string word)
+    {
+        var index = 0;
+        while (index < text.Length)
+        {
+            var at = text.IndexOf(word, index, StringComparison.OrdinalIgnoreCase);
+            if (at < 0)
+                return false;
+            var end = at + word.Length;
+            var leftFree = at == 0 || !char.IsLetterOrDigit(text[at - 1]);
+            var rightFree = end >= text.Length || !char.IsLetterOrDigit(text[end]);
+            if (leftFree && rightFree)
+                return true;
+            index = at + 1;
+        }
+
+        return false;
     }
 }

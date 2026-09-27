@@ -41,12 +41,8 @@ public sealed class SyncAnnouncement
     public static SyncAnnouncement FromLocal(CalendarEntry entry, string homeWorld)
     {
         var world = homeWorld;
-        if (!string.IsNullOrWhiteSpace(entry.Server))
-        {
-            var first = entry.Server.Split(',')[0].Trim();
-            if (PlayableWorlds.TryCanonical(first, out var canonical))
-                world = canonical;
-        }
+        if (PlayableWorlds.TryNamedWorld(entry.Server, out var named))
+            world = named;
 
         return new SyncAnnouncement
         {
@@ -98,6 +94,13 @@ public static class RelayProtocol
     public const string Dropped = "dropped";
 
     public const string Ok = "ok";
+
+    public const string Online = "online";
+
+    public const string Upgrade = "upgrade";
+
+    /// <summary>Sent as X-Sync-Protocol. A newer relay answers upgrade.</summary>
+    public const int Version = 1;
 }
 
 public static class RelayCodec

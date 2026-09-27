@@ -22,7 +22,13 @@ public sealed class SyncSnapshot
 
     public int HoldOffSeconds { get; set; } = 10;
 
+    public bool Informedaholic { get; set; }
+
+    public bool MirrorRelay { get; set; }
+
     public List<SyncAnnouncement> Events { get; set; } = new();
+
+    public List<string> DismissedKeys { get; set; } = new();
 
     public string BookId { get; set; } = "";
 }
@@ -39,6 +45,8 @@ public sealed class SyncBook
     public string BookId { get; private set; }
 
     public List<SyncAnnouncement> Events { get; } = new();
+
+    public List<string> DismissedKeys { get; } = new();
 
     public ShareSettings Settings { get; private set; } = new();
 
@@ -57,6 +65,15 @@ public sealed class SyncBook
     public string RelayChoice { get; set; } = SyncRelays.PublicLabel;
 
     public int HoldOffSeconds { get; set; } = 10;
+
+    /// <summary>When set, a shared invite is accepted instead of waiting on the pending list.</summary>
+    public bool Informedaholic { get; set; }
+
+    /// <summary>When set, a custom relay is a nearer copy. If it does not answer, sync uses the public relay.</summary>
+    public bool MirrorRelay { get; set; }
+
+    /// <summary>Last relay check. Not stored. Detach clears it.</summary>
+    public string RelayStatus { get; set; } = "";
 
     public int StoredBytes => this.Events.Sum(item => item.PayloadBytes);
 
@@ -89,6 +106,9 @@ public sealed class SyncBook
         this.RelayPort = 0;
         this.RelayChoice = SyncRelays.PublicLabel;
         this.HoldOffSeconds = 10;
+        this.Informedaholic = false;
+        this.MirrorRelay = false;
+        this.RelayStatus = "";
         this.Limits = new SyncLimits();
         this.Worlds.ClearExtras();
     }
@@ -101,6 +121,35 @@ public sealed class SyncBook
         return EventCategories.TrySet(item, label);
     }
 
+    public bool Dismiss(string id)
+    {
+        var item = this.Events.FirstOrDefault(row => row.Id == id);
+        if (item is null)
+            return false;
+        this.RememberDismissed(item);
+        this.Events.Remove(item);
+        return true;
+    }
+
+    public int DismissMatching(Func<SyncAnnouncement, bool> match)
+    {
+        var gone = this.Events.Where(match).ToList();
+        foreach (var item in gone)
+        {
+            this.RememberDismissed(item);
+            this.Events.Remove(item);
+        }
+
+        return gone.Count;
+    }
+
+    private void RememberDismissed(SyncAnnouncement item)
+    {
+        var key = string.IsNullOrEmpty(item.ContentKey) ? SyncMerge.Key(item) : item.ContentKey;
+        if (!this.DismissedKeys.Contains(key))
+            this.DismissedKeys.Add(key);
+    }
+
     public bool AcceptRemote(string id)
     {
         var item = this.Events.FirstOrDefault(row => row.Id == id && row.FromSync && !row.HarvestedLocally);
@@ -110,7 +159,21 @@ public sealed class SyncBook
         return true;
     }
 
-    public int Ingest(byte[]? proof, IReadOnlyList<SyncAnnouncement> incoming, int openConnections)
+    public int AcceptAllRemote()
+    {
+        var count = 0;
+        foreach (var item in this.Events)
+        {
+            if (!item.IsSyncPending)
+                continue;
+            item.Accepted = true;
+            count++;
+        }
+
+        return count;
+    }
+
+    public int Ingest(byte[]? proof, IReadOnlyList<SyncAnnouncement> incoming, int openConnections, PlaceCatalog? places = null)
     {
         if (!SyncGate.AllowRead(proof))
             return -1;
@@ -120,6 +183,9 @@ public sealed class SyncBook
         var shareable = incoming
             .Where(item => SharePolicy.ShouldReceive(item.Channel, this.Settings))
             .Where(item => PlayableWorlds.TryCanonical(item.World, out _))
+            .Where(item => ShoutHarvest.IsSharedEvent(item.Text, item.Channel, DateTimeOffset.UtcNow, places))
+            .Where(item => !this.AlreadyHeld(item))
+            .Where(item => !this.DismissedKeys.Contains(SyncMerge.Key(item)))
             .ToArray();
         var admitted = SyncBudget.Admit(
             shareable,
@@ -145,7 +211,15 @@ public sealed class SyncBook
             added++;
         }
 
+        if (this.Informedaholic)
+            this.AcceptAllRemote();
         return added;
+    }
+
+    private bool AlreadyHeld(SyncAnnouncement item)
+    {
+        var key = SyncMerge.Key(item);
+        return this.Events.Any(row => SyncMerge.Key(row) == key && item.Revision <= row.Revision);
     }
 
     public string ToJson()
@@ -161,7 +235,10 @@ public sealed class SyncBook
             RelayPort = this.RelayPort,
             RelayChoice = this.RelayChoice,
             HoldOffSeconds = this.HoldOffSeconds,
+            Informedaholic = this.Informedaholic,
+            MirrorRelay = this.MirrorRelay,
             Events = this.Events.ToList(),
+            DismissedKeys = this.DismissedKeys.ToList(),
             BookId = this.BookId,
         };
         return JsonSerializer.Serialize(snapshot, SnapshotJson.Options);
@@ -192,6 +269,14 @@ public sealed class SyncBook
         this.RelayPort = snapshot.RelayPort < 1 ? 0 : snapshot.RelayPort;
         this.RelayChoice = string.IsNullOrWhiteSpace(snapshot.RelayChoice) ? SyncRelays.PublicLabel : snapshot.RelayChoice;
         this.HoldOffSeconds = snapshot.HoldOffSeconds < 0 ? 0 : snapshot.HoldOffSeconds;
+        this.Informedaholic = snapshot.Informedaholic;
+        this.MirrorRelay = snapshot.MirrorRelay;
+        if (this.Limits.BytesPerSecond == 65_536)
+            this.Limits.BytesPerSecond = 1_000_000;
+        if (this.Limits.MaxStoredBytes == 1_048_576)
+            this.Limits.MaxStoredBytes = 32_000_000;
+        if (this.Limits.MaxMemoryBytes == 2_097_152)
+            this.Limits.MaxMemoryBytes = 64_000_000;
         this.Worlds.ClearExtras();
         foreach (var world in snapshot.CheckedWorlds ?? [])
             this.Worlds.SetChecked(world, true);
@@ -203,6 +288,13 @@ public sealed class SyncBook
             if (string.IsNullOrWhiteSpace(item.Id))
                 continue;
             this.Events.Add(item);
+        }
+
+        this.DismissedKeys.Clear();
+        foreach (var key in snapshot.DismissedKeys ?? [])
+        {
+            if (!string.IsNullOrWhiteSpace(key) && !this.DismissedKeys.Contains(key))
+                this.DismissedKeys.Add(key);
         }
 
         if (!string.IsNullOrWhiteSpace(snapshot.BookId))
