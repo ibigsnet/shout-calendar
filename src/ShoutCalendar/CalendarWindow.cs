@@ -460,26 +460,48 @@ public sealed class CalendarWindow : Window
         var draw = ImGui.GetWindowDrawList();
         var style = ImGui.GetStyle();
         var top = style.WindowPadding.Y + ImGui.GetFrameHeight() + style.ItemSpacing.Y;
-        const float bar = 10f;
+        var bar = this.GlanceBar() - 2f;
         foreach (var mark in spans)
         {
             var lane = lanes[mark.Key];
-            var (fill, _) = this.Tone(mark.Tone);
+            var (fill, ink) = this.Tone(mark.Tone);
             var when = $"{mark.LocalStart:ddd d MMM HH:mm} – {mark.LocalEnd:ddd d MMM HH:mm}";
             foreach (var segment in GameSchedule.Segments(month, mark.StartDate, mark.EndDate))
             {
                 var x1 = grid.X + (segment.FirstColumn * (side + gap)) + 4f;
                 var x2 = grid.X + (segment.LastColumn * (side + gap)) + side - 4f;
-                var y1 = grid.Y + (segment.Row * (side + gap)) + top + (lane * (bar + 2f));
+                var y1 = grid.Y + (segment.Row * (side + gap)) + top + (lane * this.GlanceBar());
                 var min = new Vector2(x1, y1);
                 var max = new Vector2(x2, y1 + bar);
                 draw.AddRectFilled(min, max, ImGui.ColorConvertFloat4ToU32(fill));
                 if (mark.Tone == ResetTone.Event)
                     draw.AddRect(min, max, ImGui.ColorConvertFloat4ToU32(new Vector4(0.85f, 0.72f, 0.28f, 1f)));
+                var label = this.Fit(mark.Chip, max.X - min.X - 8f);
+                draw.PushClipRect(min, max, true);
+                draw.AddText(new Vector2(min.X + 4f, min.Y + ((bar - ImGui.GetTextLineHeight()) * 0.5f)), ImGui.ColorConvertFloat4ToU32(ink), label);
+                draw.PopClipRect();
                 if (ImGui.IsMouseHoveringRect(min, max))
                     ImGui.SetTooltip($"{mark.Name}\n{when}\n{mark.Detail}");
             }
         }
+    }
+
+    private float GlanceBar() => ImGui.GetTextLineHeight() + 6f;
+
+    private string Fit(string text, float width)
+    {
+        if (string.IsNullOrEmpty(text) || width <= 0f)
+            return "";
+        if (ImGui.CalcTextSize(text).X <= width)
+            return text;
+        const string ellipsis = "…";
+        var budget = width - ImGui.CalcTextSize(ellipsis).X;
+        if (budget <= 0f)
+            return "";
+        var count = text.Length;
+        while (count > 1 && ImGui.CalcTextSize(text[..count]).X > budget)
+            count--;
+        return text[..Math.Max(1, count)] + ellipsis;
     }
 
     private (Vector4 Fill, Vector4 Ink) Tone(ResetTone tone) => tone switch
@@ -552,11 +574,11 @@ public sealed class CalendarWindow : Window
         var lines = this.LinesFor(date);
         var spanCount = lines.Count(line => line.Span);
         if (spanCount > 0)
-            ImGui.Dummy(new Vector2(1f, spanCount * 12f));
+            ImGui.Dummy(new Vector2(1f, spanCount * this.GlanceBar()));
         var shown = 0;
         foreach (var line in lines.Where(line => !line.Span))
         {
-            if (ImGui.GetCursorPosY() + 16f > side - 6f)
+            if (ImGui.GetCursorPosY() + this.GlanceBar() > side - 6f)
                 break;
             this.DrawColorBlock(line);
             shown++;
@@ -572,16 +594,21 @@ public sealed class CalendarWindow : Window
 
     private void DrawColorBlock(DayLine line)
     {
-        var (fill, _) = this.Ink(line);
+        var (fill, ink) = this.Ink(line);
         var width = MathF.Max(8f, ImGui.GetContentRegionAvail().X);
+        var height = this.GlanceBar() - 2f;
         var pos = ImGui.GetCursorScreenPos();
-        ImGui.GetWindowDrawList().AddRectFilled(pos, pos + new Vector2(width, 12f), ImGui.ColorConvertFloat4ToU32(fill));
-        ImGui.Dummy(new Vector2(width, 14f));
+        var max = pos + new Vector2(width, height);
+        var draw = ImGui.GetWindowDrawList();
+        draw.AddRectFilled(pos, max, ImGui.ColorConvertFloat4ToU32(fill));
+        var when = line.Time is TimeOnly time ? $"{time:HH:mm} " : "";
+        var label = this.Fit(when + line.Title, width - 8f);
+        draw.PushClipRect(pos, max, true);
+        draw.AddText(new Vector2(pos.X + 4f, pos.Y + ((height - ImGui.GetTextLineHeight()) * 0.5f)), ImGui.ColorConvertFloat4ToU32(ink), label);
+        draw.PopClipRect();
+        ImGui.Dummy(new Vector2(width, this.GlanceBar()));
         if (ImGui.IsItemHovered())
-        {
-            var when = line.Time is TimeOnly time ? $"{time:HH:mm} " : "";
             ImGui.SetTooltip($"{when}{line.Title}\n{line.Detail}");
-        }
     }
 
     private void DrawDayFolder()

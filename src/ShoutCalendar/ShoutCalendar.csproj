@@ -1,6 +1,6 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <Version>0.1.7</Version>
+    <Version>0.1.8</Version>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -26,7 +26,7 @@ Aggressive filter, off by default, keeps a message only when two of a date, a ti
 Accepted events ring at their clock, or the minutes before that you set, using a chat sound from &lt;se.1&gt; to &lt;se.16&gt;. Alarm unaccepted events is off until you check it, and it has its own sound.
 
 The Resets tab lists Jumbo Cactpot, the weekly and daily resets, Grand Company, and limited events. A Nocturne for Heroes, the Regalia Type-G black car for 200,000 MGP, runs 24 Sep 2026 through 13 Oct 2026 and stretches across those days. Crystal blue is a reset, cactus green is the Cactpot, and the dark bar is a limited event.</Description>
-    <Changelog>Limited events span the days again, and each day keeps a color block for what is timed. Every day window reopens where the last one was moved. New installs use a 1-day hold, the aggressive filter, and a 15-minute alarm lead.</Changelog>
+    <Changelog>Color blocks and multi-day spans show a short label, trimmed to the width of the box.</Changelog>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\ShoutCalendar.Core\ShoutCalendar.Core.csproj" />
