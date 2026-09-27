@@ -37,7 +37,9 @@ Accepted and pending invites are saved across restarts. **Hold unaccepted for (d
 
 **Alarms** ring a chat sound, `<se.1>` through `<se.16>`, when an accepted event's clock arrives. **Minutes before** is 0 at that clock. **Alarm unaccepted events** is off until checked, and it has its own sound. Test plays the selected sound.
 
-**Resets** is the second tab. Jumbo Cactpot, the weekly reset, and A Nocturne for Heroes start on. Daily reset and Grand Company start off. Cactpot follows the data-center region, defaulting to North America. A limited event draws a bar across its dates. Colors are fixed for now: crystal blue, cactus green, and a dark bar for a limited event.
+The left side has **Pending**, **Settings**, and **Resets**. Pending is the invite list. Settings holds the hold time, the aggressive filter, chats, and alarms. Resets lists the clocks. Jumbo Cactpot, the weekly reset, Wondrous Tails, and A Nocturne for Heroes start on. The other weekly and daily rows start off. Hover a row for the details.
+
+Each alarm has its own `<se.#>` and an optional WAV file. An empty file uses the chat sound. Reset alarms are separate from accepted and pending invites. A weekday such as "next Tuesday", and a glued ward such as `W3P26`, are kept when the aggressive filter is off.
 
 ## Official plugin list
 

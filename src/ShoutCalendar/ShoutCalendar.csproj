@@ -1,6 +1,6 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <Version>0.1.3</Version>
+    <Version>0.1.4</Version>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -26,7 +26,7 @@ Aggressive filter, off by default, keeps a message only when two of a date, a ti
 Accepted events ring at their clock, or the minutes before that you set, using a chat sound from &lt;se.1&gt; to &lt;se.16&gt;. Alarm unaccepted events is off until you check it, and it has its own sound.
 
 The Resets tab lists Jumbo Cactpot, the weekly and daily resets, Grand Company, and limited events. A Nocturne for Heroes, the Regalia Type-G black car for 200,000 MGP, runs 24 Sep 2026 through 13 Oct 2026 and stretches across those days. Crystal blue is a reset, cactus green is the Cactpot, and the dark bar is a limited event.</Description>
-    <Changelog>Resets tab for Jumbo Cactpot, weekly and daily clocks, and the Nocturne for Heroes span.</Changelog>
+    <Changelog>Weekday dates and glued wards such as W3P26 are kept. Resets have their own alarm, and a WAV file can replace the chat sound. Settings, Pending, and Resets are separate tabs. Wondrous Tails is its own Tuesday row.</Changelog>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\ShoutCalendar.Core\ShoutCalendar.Core.csproj" />

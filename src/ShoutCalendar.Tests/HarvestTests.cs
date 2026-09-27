@@ -201,4 +201,20 @@ public class HarvestTests
         Assert.Equal(new TimeOnly(6, 30), datedTime.Time);
         Assert.Equal("", datedTime.Place);
     }
+
+    [Fact]
+    public void NextTuesdayAndGluedWardPlotAreKeptWhenTheFilterIsOff()
+    {
+        var sunday = new DateTimeOffset(2026, 9, 27, 18, 0, 0, TimeSpan.Zero);
+        var entry = ShoutHarvest.TryHarvest(
+            "Next Tuesday on our home plot, W3P26",
+            ShoutHarvest.FreeCompanyChannel,
+            sunday);
+
+        Assert.NotNull(entry);
+        Assert.Equal(new DateOnly(2026, 9, 29), entry.Date);
+        Assert.Equal(3, entry.Ward);
+        Assert.Contains("plot 26", entry.Place);
+        Assert.Null(entry.Time);
+    }
 }

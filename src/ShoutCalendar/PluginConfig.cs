@@ -29,6 +29,16 @@ public sealed class PluginConfig : IPluginConfiguration
 
     public int UnacceptedSound { get; set; } = 1;
 
+    public int ResetSound { get; set; } = 3;
+
+    public string AcceptedSoundFile { get; set; } = "";
+
+    public string UnacceptedSoundFile { get; set; } = "";
+
+    public string ResetSoundFile { get; set; } = "";
+
+    public bool AlarmResets { get; set; } = true;
+
     public int AlarmMinutesBefore { get; set; }
 
     /// <summary>Null means <see cref="GameSchedule.DefaultIds"/>.</summary>

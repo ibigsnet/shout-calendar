@@ -5,6 +5,7 @@ using Dalamud.Game.Text;
 using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
 using Dalamud.Plugin;
+using Dalamud.Interface.ImGuiFileDialog;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using Lumina.Excel.Sheets;
@@ -27,6 +28,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly ClearPrompt clearPrompt = new();
     private readonly WindowSystem windowSystem;
     private readonly CalendarWindow window;
+    private readonly FileDialogManager dialogs = new();
     private DateTime? alarmMinute;
 
     public Plugin()
@@ -53,6 +55,11 @@ public sealed class Plugin : IDalamudPlugin
         this.session.AlarmUnaccepted = this.config.AlarmUnaccepted;
         this.session.AcceptedSound = EventAlarm.ClampSound(this.config.AcceptedSound);
         this.session.UnacceptedSound = EventAlarm.ClampSound(this.config.UnacceptedSound);
+        this.session.ResetSound = EventAlarm.ClampSound(this.config.ResetSound);
+        this.session.AcceptedSoundFile = this.config.AcceptedSoundFile ?? "";
+        this.session.UnacceptedSoundFile = this.config.UnacceptedSoundFile ?? "";
+        this.session.ResetSoundFile = this.config.ResetSoundFile ?? "";
+        this.session.AlarmResets = this.config.AlarmResets;
         this.session.AlarmMinutesBefore = this.config.AlarmMinutesBefore < 0 ? 0 : this.config.AlarmMinutesBefore;
         this.session.UseResets(this.config.EnabledResets);
         this.session.CactpotRegion = GameSchedule.NormalizeRegion(this.config.CactpotRegion);
@@ -60,7 +67,7 @@ public sealed class Plugin : IDalamudPlugin
         if (this.session.Log.ExpireUnaccepted(DateTimeOffset.UtcNow, this.session.UnacceptedHoldDays) > 0)
             this.Save();
 
-        this.window = new CalendarWindow(this.session, this.clearPrompt, this.Save, this.PreviewSound);
+        this.window = new CalendarWindow(this.session, this.clearPrompt, this.Save, this.PlayAlarm, this.dialogs);
         this.windowSystem = new WindowSystem("ShoutCalendar");
         this.windowSystem.AddWindow(this.window);
 
@@ -129,6 +136,22 @@ public sealed class Plugin : IDalamudPlugin
             this.session.AlarmAccepted,
             this.session.AlarmUnaccepted,
             this.session.AlarmMinutesBefore);
+        if (this.session.AlarmResets)
+        {
+            var resets = GameSchedule.Due(
+                now,
+                this.alarmMinute,
+                TimeZoneInfo.Local,
+                this.session.CactpotRegion,
+                this.session.Resets,
+                this.session.AlarmMinutesBefore);
+            if (resets.Count > 0)
+            {
+                ChatGui.Print("Shout Calendar: reset " + string.Join(", ", resets.Select(mark => mark.Name)) + ".");
+                this.PlayAlarm(this.session.ResetSound, this.session.ResetSoundFile);
+            }
+        }
+
         var minute = EventAlarm.MinuteOf(now);
         if (this.alarmMinute != minute)
             this.alarmMinute = minute;
@@ -149,7 +172,18 @@ public sealed class Plugin : IDalamudPlugin
         var note = entry.EventText.Length > 80 ? entry.EventText[..80] : entry.EventText;
         var kind = accepted ? "accepted" : "pending";
         ChatGui.Print($"Shout Calendar: {kind} {when}{place}. {note}");
-        this.PreviewSound(accepted ? this.session.AcceptedSound : this.session.UnacceptedSound);
+        this.PlayAlarm(
+            accepted ? this.session.AcceptedSound : this.session.UnacceptedSound,
+            accepted ? this.session.AcceptedSoundFile : this.session.UnacceptedSoundFile);
+    }
+
+    private void PlayAlarm(int sound, string? file)
+    {
+        if (AlarmPlayback.TryPlayFile(file))
+            return;
+        this.PreviewSound(sound);
+        if (!string.IsNullOrWhiteSpace(file))
+            ChatGui.Print($"Shout Calendar: could not play that file. Using <se.{EventAlarm.ClampSound(sound)}>.");
     }
 
     private void PreviewSound(int sound)
@@ -208,6 +242,11 @@ public sealed class Plugin : IDalamudPlugin
         this.config.AlarmUnaccepted = this.session.AlarmUnaccepted;
         this.config.AcceptedSound = EventAlarm.ClampSound(this.session.AcceptedSound);
         this.config.UnacceptedSound = EventAlarm.ClampSound(this.session.UnacceptedSound);
+        this.config.ResetSound = EventAlarm.ClampSound(this.session.ResetSound);
+        this.config.AcceptedSoundFile = this.session.AcceptedSoundFile ?? "";
+        this.config.UnacceptedSoundFile = this.session.UnacceptedSoundFile ?? "";
+        this.config.ResetSoundFile = this.session.ResetSoundFile ?? "";
+        this.config.AlarmResets = this.session.AlarmResets;
         this.config.AlarmMinutesBefore = this.session.AlarmMinutesBefore < 0 ? 0 : this.session.AlarmMinutesBefore;
         this.config.EnabledResets = this.session.Resets.Order().ToList();
         this.config.CactpotRegion = GameSchedule.NormalizeRegion(this.session.CactpotRegion);

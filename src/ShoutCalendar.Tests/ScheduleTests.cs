@@ -53,6 +53,25 @@ public class ScheduleTests
     }
 
     [Fact]
+    public void WondrousTailsUsesTheTuesdayReset()
+    {
+        var marks = GameSchedule.InMonth(2026, 9, Central, "na", new HashSet<string> { GameSchedule.Tails });
+        var tails = marks.Single(mark => mark.LocalStart.Day == 29);
+
+        Assert.Equal(new DateTime(2026, 9, 29, 3, 0, 0), tails.LocalStart);
+        Assert.Contains("Khloe", tails.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AnOldDefaultListGainsWondrousTails()
+    {
+        var saved = new[] { GameSchedule.Cactpot, GameSchedule.Weekly, GameSchedule.Nocturne };
+        var merged = GameSchedule.MergeSaved(saved).ToHashSet(StringComparer.Ordinal);
+
+        Assert.Contains(GameSchedule.Tails, merged);
+    }
+
+    [Fact]
     public void ATurnedOffResetIsAbsent()
     {
         var marks = GameSchedule.InMonth(2026, 9, Central, "na", new HashSet<string> { GameSchedule.Weekly });

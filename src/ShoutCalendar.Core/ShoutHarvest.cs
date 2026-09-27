@@ -24,12 +24,16 @@ public static class ShoutHarvest
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     private static readonly Regex WardRegex = new(
-        @"\b(?:ward\s*#?\s*|(?<![A-Za-z])[Ww])(?<n>30|[12][0-9]|[1-9])\b",
+        @"\b(?:ward\s*#?\s*|(?<![A-Za-z])[Ww])(?<n>30|[12][0-9]|[1-9])(?!\d)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     private static readonly Regex PlotShorthandRegex = new(
-        @"\b[Pp](?<n>[1-9]|[1-5][0-9]|60)\b",
+        @"(?<![A-Za-z])[Pp](?<n>[1-9]|[1-5][0-9]|60)(?!\d)",
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private static readonly Regex WeekdayRegex = new(
+        @"\b(?:(?<when>next|this)\s+)?(?<weekday>sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     private static readonly Regex DateRegex = new(
         @"\b(?<m>1[0-2]|0?[1-9])/(?<d>3[01]|[12]\d|0?[1-9])/(?<y>\d{4}|\d{2})\b",
@@ -56,7 +60,7 @@ public static class ShoutHarvest
             return null;
 
         var clocks = ReadClocks(text);
-        var statedDate = ReadDate(text) ?? ReadRelativeDay(text, shoutTimestamp);
+        var statedDate = ReadDate(text) ?? ReadRelativeDay(text, shoutTimestamp) ?? ReadWeekday(text, shoutTimestamp);
 
         int? ward = null;
         var wardMatch = WardRegex.Match(text);
@@ -149,6 +153,29 @@ public static class ShoutHarvest
         return match.Groups["day"].Value.Equals("tomorrow", StringComparison.OrdinalIgnoreCase)
             ? day.AddDays(1)
             : day;
+    }
+
+    private static DateOnly? ReadWeekday(string text, DateTimeOffset shoutTimestamp)
+    {
+        var match = WeekdayRegex.Match(text);
+        if (!match.Success)
+            return null;
+
+        var names = new[]
+        {
+            "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
+        };
+        var target = Array.FindIndex(names, name => name.Equals(match.Groups["weekday"].Value, StringComparison.OrdinalIgnoreCase));
+        if (target < 0)
+            return null;
+
+        var today = DateOnly.FromDateTime(shoutTimestamp.UtcDateTime);
+        var delta = (target - (int)today.DayOfWeek + 7) % 7;
+        var next = match.Groups["when"].Success
+            && match.Groups["when"].Value.Equals("next", StringComparison.OrdinalIgnoreCase);
+        if (next && delta == 0)
+            delta = 7;
+        return today.AddDays(delta);
     }
 
     private static DateOnly? ReadDate(string text)

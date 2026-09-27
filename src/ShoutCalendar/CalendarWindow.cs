@@ -1,5 +1,6 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.ImGuiFileDialog;
 using Dalamud.Interface.Windowing;
 using ShoutCalendar.Core;
 
@@ -10,7 +11,8 @@ public sealed class CalendarWindow : Window
     private readonly CalendarSession session;
     private readonly ClearPrompt prompt;
     private readonly Action save;
-    private readonly Action<int> previewSound;
+    private readonly Action<int, string?> previewSound;
+    private readonly FileDialogManager dialogs;
     private string? selectedId;
     private string? editingId;
     private string editNote = "";
@@ -22,13 +24,19 @@ public sealed class CalendarWindow : Window
     private string minutesBeforeText = "";
     private bool minutesBeforeReady;
 
-    public CalendarWindow(CalendarSession session, ClearPrompt prompt, Action save, Action<int> previewSound)
+    public CalendarWindow(
+        CalendarSession session,
+        ClearPrompt prompt,
+        Action save,
+        Action<int, string?> previewSound,
+        FileDialogManager dialogs)
         : base("Shout Calendar (provisional)")
     {
         this.session = session;
         this.prompt = prompt;
         this.save = save;
         this.previewSound = previewSound;
+        this.dialogs = dialogs;
         this.SizeConstraints = new WindowSizeConstraints
         {
             MinimumSize = new Vector2(1180, 820),
@@ -42,6 +50,7 @@ public sealed class CalendarWindow : Window
         ImGui.SameLine();
         this.DrawCalendar();
         this.DrawClearPrompt();
+        this.dialogs.Draw();
     }
 
     private void DrawHistory()
@@ -58,6 +67,12 @@ public sealed class CalendarWindow : Window
                 ImGui.EndTabItem();
             }
 
+            if (ImGui.BeginTabItem("Settings"))
+            {
+                this.DrawSettings();
+                ImGui.EndTabItem();
+            }
+
             if (ImGui.BeginTabItem("Resets"))
             {
                 this.DrawResets();
@@ -70,11 +85,16 @@ public sealed class CalendarWindow : Window
         ImGui.EndChild();
     }
 
-    private void DrawPending()
+    private void DrawSettings()
     {
         this.DrawHoldDays();
         this.DrawAggressiveFilter();
+        this.DrawChannelOptions();
         this.DrawAlarms();
+    }
+
+    private void DrawPending()
+    {
         var rowRight = ImGui.GetCursorScreenPos().X + ImGui.GetContentRegionAvail().X;
         var continued = false;
         this.DrawWrappingButton("Clear all", rowRight, ref continued, () => this.prompt.Ask(ClearTarget.All));
@@ -119,24 +139,26 @@ public sealed class CalendarWindow : Window
 
     private void DrawResets()
     {
-        ImGui.TextWrapped("Crystal blue marks a reset. Cactus green marks the Jumbo Cactpot. The dark bar is a limited event.");
-        var region = GameSchedule.NormalizeRegion(this.session.CactpotRegion);
-        if (ImGui.BeginCombo("Data centers##cactpot-region", GameSchedule.RegionLabel(region)))
-        {
-            foreach (var choice in new[] { GameSchedule.RegionNa, GameSchedule.RegionEu, GameSchedule.RegionJp, GameSchedule.RegionOc })
-            {
-                if (!ImGui.Selectable($"{GameSchedule.RegionLabel(choice)}##region-{choice}", choice == region))
-                    continue;
-                this.session.CactpotRegion = choice;
-                this.save();
-            }
+        ImGui.TextWrapped("Crystal blue is a reset. Cactus green is the Cactpot. The dark bar is a limited event. Hover a row for the details.");
+        this.DrawResetGroup("Jumbo Cactpot", GameSchedule.GroupCactpot, true, true);
+        this.DrawResetGroup("Weekly", GameSchedule.GroupWeekly, true, false);
+        this.DrawResetGroup("Daily", GameSchedule.GroupDaily, false, false);
+        this.DrawResetGroup("Grand Company", GameSchedule.GroupGrand, false, false);
+        this.DrawResetGroup("Limited", GameSchedule.GroupEvent, true, false);
+    }
 
-            ImGui.EndCombo();
-        }
+    private void DrawResetGroup(string title, string group, bool open, bool regionPicker)
+    {
+        ImGui.SetNextItemOpen(open, ImGuiCond.FirstUseEver);
+        if (!ImGui.CollapsingHeader($"{title}##reset-group-{group}"))
+            return;
+
+        if (regionPicker)
+            this.DrawCactpotRegion();
 
         var zone = TimeZoneInfo.Local;
         var now = DateTimeOffset.UtcNow;
-        foreach (var item in GameSchedule.Items)
+        foreach (var item in GameSchedule.Items.Where(item => item.Group == group))
         {
             var enabled = this.session.Resets.Contains(item.Id);
             if (ImGui.Checkbox($"{item.Name}##reset-{item.Id}", ref enabled))
@@ -145,10 +167,27 @@ public sealed class CalendarWindow : Window
                 this.save();
             }
 
-            ImGui.TextWrapped(GameSchedule.NextLine(item.Id, now, zone, this.session.CactpotRegion));
-            ImGui.TextWrapped(item.Detail);
-            ImGui.Separator();
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip(item.Detail);
+            ImGui.SameLine();
+            ImGui.TextDisabled(GameSchedule.NextLine(item.Id, now, zone, this.session.CactpotRegion));
         }
+    }
+
+    private void DrawCactpotRegion()
+    {
+        var region = GameSchedule.NormalizeRegion(this.session.CactpotRegion);
+        if (!ImGui.BeginCombo("Data centers##cactpot-region", GameSchedule.RegionLabel(region)))
+            return;
+        foreach (var choice in new[] { GameSchedule.RegionNa, GameSchedule.RegionEu, GameSchedule.RegionJp, GameSchedule.RegionOc })
+        {
+            if (!ImGui.Selectable($"{GameSchedule.RegionLabel(choice)}##region-{choice}", choice == region))
+                continue;
+            this.session.CactpotRegion = choice;
+            this.save();
+        }
+
+        ImGui.EndCombo();
     }
 
     private void DrawWrappingButton(string label, float rowRight, ref bool continued, Action onClick)
@@ -194,41 +233,99 @@ public sealed class CalendarWindow : Window
     private void DrawAggressiveFilter()
     {
         var aggressive = this.session.AggressiveFilter;
-        if (!ImGui.Checkbox("Aggressive filter (2 of date, time, place)##aggressive", ref aggressive))
-            return;
-        this.session.AggressiveFilter = aggressive;
-        this.save();
+        if (ImGui.Checkbox("Aggressive filter (2 of date, time, place)##aggressive", ref aggressive))
+        {
+            this.session.AggressiveFilter = aggressive;
+            this.save();
+        }
+
+        ImGui.TextWrapped("Off: a line is kept when it has a date, a time, or a place. On: it needs two of those three, so a place name by itself is skipped. Today, tonight, tomorrow, and a weekday such as next Tuesday count as a date.");
     }
 
     private void DrawAlarms()
     {
-        ImGui.SetNextItemOpen(true, ImGuiCond.FirstUseEver);
+        ImGui.SetNextItemOpen(false, ImGuiCond.FirstUseEver);
         if (!ImGui.CollapsingHeader("Alarms##alarms"))
             return;
 
-        var accepted = this.session.AlarmAccepted;
-        if (ImGui.Checkbox("Alarm accepted events##alarm-accepted", ref accepted))
-        {
-            this.session.AlarmAccepted = accepted;
-            this.save();
-        }
-
-        this.DrawSoundChoice("Accepted <se.#>##accepted-se", this.session.AcceptedSound, sound => this.session.AcceptedSound = sound);
-        if (ImGui.Button("Test##accepted-se"))
-            this.previewSound(this.session.AcceptedSound);
-
         this.DrawMinutesBefore();
+        this.DrawAlarmChoice(
+            "Alarm accepted events##alarm-accepted",
+            this.session.AlarmAccepted,
+            value => this.session.AlarmAccepted = value,
+            "Accepted <se.#>##accepted-se",
+            this.session.AcceptedSound,
+            sound => this.session.AcceptedSound = sound,
+            this.session.AcceptedSoundFile,
+            file => this.session.AcceptedSoundFile = file,
+            "accepted");
+        this.DrawAlarmChoice(
+            "Alarm unaccepted events##alarm-pending",
+            this.session.AlarmUnaccepted,
+            value => this.session.AlarmUnaccepted = value,
+            "Unaccepted <se.#>##pending-se",
+            this.session.UnacceptedSound,
+            sound => this.session.UnacceptedSound = sound,
+            this.session.UnacceptedSoundFile,
+            file => this.session.UnacceptedSoundFile = file,
+            "pending");
+        this.DrawAlarmChoice(
+            "Alarm resets##alarm-resets",
+            this.session.AlarmResets,
+            value => this.session.AlarmResets = value,
+            "Reset <se.#>##reset-se",
+            this.session.ResetSound,
+            sound => this.session.ResetSound = sound,
+            this.session.ResetSoundFile,
+            file => this.session.ResetSoundFile = file,
+            "resets");
+        ImGui.TextWrapped("A WAV file plays instead of the chat sound. Leave the file empty to use <se.#>.");
+    }
 
-        var pending = this.session.AlarmUnaccepted;
-        if (ImGui.Checkbox("Alarm unaccepted events##alarm-pending", ref pending))
+    private void DrawAlarmChoice(
+        string checkbox,
+        bool enabled,
+        Action<bool> setEnabled,
+        string soundLabel,
+        int sound,
+        Action<int> setSound,
+        string file,
+        Action<string> setFile,
+        string id)
+    {
+        if (ImGui.Checkbox(checkbox, ref enabled))
         {
-            this.session.AlarmUnaccepted = pending;
+            setEnabled(enabled);
             this.save();
         }
 
-        this.DrawSoundChoice("Unaccepted <se.#>##pending-se", this.session.UnacceptedSound, sound => this.session.UnacceptedSound = sound);
-        if (ImGui.Button("Test##pending-se"))
-            this.previewSound(this.session.UnacceptedSound);
+        this.DrawSoundChoice(soundLabel, sound, setSound);
+        ImGui.SameLine();
+        if (ImGui.Button($"Test##{id}-se"))
+            this.previewSound(sound, file);
+
+        var path = file ?? "";
+        ImGui.SetNextItemWidth(220f);
+        if (ImGui.InputText($"File##{id}-file", ref path, 260))
+        {
+            setFile(path);
+            this.save();
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button($"Browse##{id}-file"))
+        {
+            this.dialogs.OpenFileDialog(
+                "Alarm sound",
+                "WAV{.wav}",
+                (ok, chosen) =>
+                {
+                    if (!ok || string.IsNullOrWhiteSpace(chosen))
+                        return;
+                    setFile(chosen);
+                    this.save();
+                });
+        }
     }
 
     private void DrawSoundChoice(string label, int current, Action<int> setSound)

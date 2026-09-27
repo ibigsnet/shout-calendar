@@ -28,6 +28,9 @@ public class WiringTests
         Assert.Contains("Alarm accepted events", window, StringComparison.Ordinal);
         Assert.Contains("Alarm unaccepted events", window, StringComparison.Ordinal);
         Assert.Contains("BeginTabItem(\"Resets\")", window, StringComparison.Ordinal);
+        Assert.Contains("BeginTabItem(\"Settings\")", window, StringComparison.Ordinal);
+        Assert.Contains("Alarm resets", window, StringComparison.Ordinal);
+        Assert.Contains("place name by itself is skipped", window, StringComparison.Ordinal);
         var schedule = File.ReadAllText(Path.Combine(root, "src", "ShoutCalendar.Core", "GameSchedule.cs"));
         Assert.Contains("Jumbo Cactpot", schedule, StringComparison.Ordinal);
         Assert.Contains("A Nocturne for Heroes", schedule, StringComparison.Ordinal);
