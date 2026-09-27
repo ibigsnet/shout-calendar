@@ -7,8 +7,20 @@
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <Author>provisional</Author>
     <Name>Shout Calendar (provisional)</Name>
-    <Punchline>Provisional calendar of shout-chat events that state a clock time and a ward or server.</Punchline>
-    <Description>Provisional local Dalamud plugin. A shout is added when it states an explicit clock time and a ward number or an FFXIV world or data-center name. Display name, author, and several behaviors are open questions in QUESTIONS.md.</Description>
+    <RepoUrl>https://github.com/ibigsnet/shout-calendar</RepoUrl>
+    <Punchline>Keeps chat event invites on a month calendar until you accept them.</Punchline>
+    <Description>Watches the chats you choose for event invites and holds them until you accept. Nothing is accepted for you, and nothing is sent to other players.
+
+A new install listens to Say, Shout, Yell, incoming tells, Free Company, Free Company announcements, and Novice Network. Party, alliance, outgoing tells, linkshells, and cross-world linkshells start off. The Chats list starts collapsed.
+
+A message is kept when it has a time or a place: a clock time, a date such as 10/13/26, today, tonight, or tomorrow, a ward or plot, map coordinates, a world or data center, or a place name from the game's own data. A time with no place lands on the day the message arrived. A place with no time sits under the month in Needs a date. A ward heard while you are in a city guesses that city's housing district: Limsa to Mist, Gridania to the Lavender Beds, Ul'dah to the Goblet, Kugane to Shirogane, and Ishgard to Empyreum. Edit changes the note, the date (yyyy-MM-dd), the time (HH:mm), and the location.
+
+Pending invites are orange, on the left and on the day. Accept takes one off the left list and leaves it green on that day. Decline and Delete remove it. Edit and Delete still work after you accept. Clear all, Clear accepted, and Clear unaccepted each ask Yes or No first.
+
+Accepted and pending invites are saved across restarts. Hold unaccepted for (days) defaults to 14. Accepted invites stay until you delete them.
+
+/shoutcalendar opens the calendar. /shoutcalendar test checks a line on your machine and does not send chat.</Description>
+    <Changelog>First public build of the month calendar.</Changelog>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\ShoutCalendar.Core\ShoutCalendar.Core.csproj" />
