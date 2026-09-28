@@ -12,6 +12,8 @@ public sealed class SyncSnapshot
 
     public string Selected { get; set; } = "";
 
+    public string LastViewed { get; set; } = "";
+
     public List<string> ViewedWorlds { get; set; } = new();
 
     public bool ShowSync { get; set; } = true;
@@ -284,6 +286,7 @@ public sealed class SyncBook
             Limits = this.Limits,
             CheckedWorlds = this.Worlds.Extras().ToList(),
             Selected = this.Worlds.Selected,
+            LastViewed = this.Worlds.LastPicked,
             ViewedWorlds = this.Worlds.Viewing().ToList(),
             ShowSync = this.ShowSync,
             RelayHost = this.RelayHost,
@@ -335,6 +338,10 @@ public sealed class SyncBook
         this.Worlds.ClearExtras();
         foreach (var world in snapshot.CheckedWorlds ?? [])
             this.Worlds.SetChecked(world, true);
+        if (!string.IsNullOrWhiteSpace(snapshot.LastViewed))
+            this.Worlds.RememberPick(snapshot.LastViewed);
+        else if (!string.IsNullOrWhiteSpace(snapshot.Selected))
+            this.Worlds.RememberPick(snapshot.Selected);
         if (snapshot.ViewedWorlds is { Count: > 0 })
             this.Worlds.UseView(snapshot.ViewedWorlds);
         else if (!string.IsNullOrWhiteSpace(snapshot.Selected))

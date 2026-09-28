@@ -152,10 +152,24 @@ public sealed class WorldCalendar
         }
     }
 
+    public string LastPicked => this.lastPicked;
+
+    public void RememberPick(string world)
+    {
+        if (PlayableWorlds.TryCanonical(world, out var canonical) && this.IsChecked(canonical))
+            this.lastPicked = canonical;
+    }
+
     private void KeepSelection()
     {
         if (this.viewing.Contains(this.Selected))
             return;
+        if (PlayableWorlds.TryCanonical(this.lastPicked, out var picked) && this.viewing.Contains(picked))
+        {
+            this.Selected = picked;
+            return;
+        }
+
         this.Selected = this.Viewing().FirstOrDefault() ?? this.Home;
     }
 
@@ -279,6 +293,7 @@ public sealed class WorldCalendar
         this.viewing.Clear();
         this.viewing.Add(canonical);
         this.Selected = canonical;
+        this.lastPicked = canonical;
         return true;
     }
 

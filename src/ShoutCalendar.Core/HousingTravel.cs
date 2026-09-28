@@ -65,11 +65,11 @@ public static class HousingTravel
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     private static readonly Regex PlotRegex = new(
-        @"(?:\bplot\s*#?\s*|(?<![A-Za-z])[Pp])(?<n>\d{1,2})(?!\d)",
+        @"(?:\bplot[\s\-–—·•．.]*#?[\s\-–—·•．.]*|(?<![A-Za-z])[Pp])(?<n>\d{1,2})(?!\d)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     private static readonly Regex WardRegex = new(
-        @"(?:\bward\s*#?\s*|(?<![A-Za-z])[Ww])(?<n>\d{1,2})(?!\d)",
+        @"(?:\bward[\s\-–—·•．.]*#?[\s\-–—·•．.]*|(?<![A-Za-z])[Ww])(?<n>\d{1,2})(?!\d)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     public static HousingSpot? Find(string? place, string? text, int? ward, string? server)

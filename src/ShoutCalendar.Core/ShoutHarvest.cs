@@ -20,7 +20,7 @@ public static class ShoutHarvest
     public const int FreeCompanyChannel = 24;
 
     private static readonly Regex WardRegex = new(
-        @"\b(?:ward\s*#?\s*|(?<![A-Za-z])[Ww])(?<n>30|[12][0-9]|[1-9])(?!\d)",
+        @"\b(?:ward[\s\-–—·•．.]*#?[\s\-–—·•．.]*|(?<![A-Za-z])[Ww])(?<n>30|[12][0-9]|[1-9])(?!\d)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     private static readonly Regex PlotShorthandRegex = new(
@@ -44,7 +44,7 @@ public static class ShoutHarvest
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     private static readonly Regex PlaceWordRegex = new(
-        @"\b(?<kind>plot|apartment|room|house|cottage)\s*#?\s*(?<n>\d{1,3})\b|\b(?<sub>subdivision)\b",
+        @"\b(?<kind>plot|apartment|room|house|cottage)[\s\-–—·•．.]*#?[\s\-–—·•．.]*(?<n>\d{1,3})\b|\b(?<sub>subdivision)\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     public static CalendarEntry? TryHarvest(
@@ -66,6 +66,7 @@ public static class ShoutHarvest
             : TimeZoneInfo.ConvertTime(shoutTimestamp, zone).DateTime;
         DateOnly? nowDay = null;
         var pinnedSpan = false;
+        var nowOnly = false;
         if (ZoneClock.TryNowUntil(text, out var until))
         {
             var start = new TimeOnly(heardLocal.Hour, heardLocal.Minute);
@@ -84,6 +85,7 @@ public static class ShoutHarvest
         {
             clocks.Add(new TimeOnly(heardLocal.Hour, heardLocal.Minute));
             nowDay = DateOnly.FromDateTime(heardLocal);
+            nowOnly = true;
         }
 
         var heard = HeardDay(shoutTimestamp, zone);
@@ -120,13 +122,22 @@ public static class ShoutHarvest
         if (ward is not null && housingHint is not null && !PlaceAlreadyNamesDistrict(placeParts))
             placeParts.Add(housingHint);
 
+        var strongDate = writtenDate is not null;
+        var strongTime = pinnedSpan || (clocks.Count > 0 && !nowOnly);
+        var strongPlace = ward is not null || coordinates is not null || district is not null || extras.Count > 0;
         var hasDate = statedDate is not null;
         var hasTime = clocks.Count > 0;
         var hasPlace = placeParts.Count > 0;
         if (aggressive && writtenDate is null)
         {
             var signals = (hasDate ? 1 : 0) + (hasTime ? 1 : 0) + (hasPlace ? 1 : 0);
-            if (signals < 2)
+            var strong = (strongDate ? 1 : 0) + (strongTime ? 1 : 0) + (strongPlace ? 1 : 0);
+            if (signals < 2 || strong < 1)
+                return null;
+            // "Goblet now" and "tonight on Faerie" show up in ordinary chat.
+            if (nowOnly && !strongPlace)
+                return null;
+            if (nowOnly && strongPlace && ward is null && extras.Count == 0 && coordinates is null)
                 return null;
         }
         else if (!hasDate && !hasTime && !hasPlace)

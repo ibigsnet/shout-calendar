@@ -30,6 +30,7 @@ public static class ServerNames
         ("Krak", "Kraken"),
         ("Bryn", "Brynhildr"),
         ("Crys", "Crystal"),
+        ("Raff", "Rafflesia"),
     ];
 
     private static readonly Dictionary<string, string> CanonicalByFold = BuildCanonical();

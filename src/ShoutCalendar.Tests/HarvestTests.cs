@@ -468,6 +468,9 @@ public class HarvestTests
     {
         Assert.Null(ShoutHarvest.TryHarvest("starting at 8:00pm", ShoutHarvest.ShoutChannel, ShoutAt, aggressive: true));
         Assert.Null(ShoutHarvest.TryHarvest("come to ward 13 on Faerie", ShoutHarvest.ShoutChannel, ShoutAt, aggressive: true));
+        Assert.Null(ShoutHarvest.TryHarvest("see you tonight on Faerie", ShoutHarvest.ShoutChannel, ShoutAt, aggressive: true));
+        Assert.Null(ShoutHarvest.TryHarvest("heading to the Goblet now", ShoutHarvest.ShoutChannel, ShoutAt, aggressive: true));
+        Assert.Null(ShoutHarvest.TryHarvest("I'm free tonight", ShoutHarvest.ShoutChannel, ShoutAt, aggressive: true));
 
         var datedPlace = ShoutHarvest.TryHarvest("W3 Plot 27 on 10/13/26", ShoutHarvest.ShoutChannel, ShoutAt, aggressive: true);
         Assert.NotNull(datedPlace);
@@ -483,6 +486,9 @@ public class HarvestTests
         Assert.Equal(new DateOnly(2026, 9, 27), datedTime.Date);
         Assert.Equal(new TimeOnly(6, 30), datedTime.Time);
         Assert.Equal("", datedTime.Place);
+
+        Assert.NotNull(ShoutHarvest.TryHarvest("tonight at the Goblet", ShoutHarvest.ShoutChannel, ShoutAt, aggressive: true));
+        Assert.NotNull(ShoutHarvest.TryHarvest("Open now Goblet W7 P5", ShoutHarvest.ShoutChannel, ShoutAt, aggressive: true));
     }
 
     [Fact]
@@ -806,6 +812,46 @@ public class HarvestTests
         worlds.SetViewDataCenter("Crystal", true);
         worlds.SetViewDataCenter("Crystal", false);
         Assert.Equal(["Goblin"], worlds.Viewing());
+    }
+
+    [Fact]
+    public void ClickingThroughViewedWorldsKeepsOnlyTheLastOne()
+    {
+        var worlds = new WorldCalendar("Diabolos");
+        foreach (var world in new[] { "Balmung", "Goblin", "Mateus", "Zalera" })
+            worlds.SetChecked(world, true);
+        Assert.True(worlds.Select("Balmung"));
+        Assert.True(worlds.Select("Goblin"));
+        Assert.True(worlds.Select("Mateus"));
+        Assert.Equal(["Mateus"], worlds.Viewing());
+        Assert.Equal("Mateus", worlds.Selected);
+        Assert.Equal("Mateus", worlds.LastPicked);
+        worlds.SetViewing("Mateus", false);
+        Assert.Equal(["Mateus"], worlds.Viewing());
+        worlds.SetViewDataCenter("Crystal", true);
+        worlds.SetViewing("Zalera", false);
+        Assert.Contains("Mateus", worlds.Viewing());
+        Assert.Equal("Mateus", worlds.Selected);
+    }
+
+    [Fact]
+    public void HyphenatedRafflesiaGobletAddressIsAPlace()
+    {
+        var eastern = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+        var when = new DateTimeOffset(2026, 9, 28, 7, 0, 0, TimeSpan.Zero);
+        const string text = "THE DOG HAUS NOW @ Raff-Goblet-Ward 21-Plot 4 discord.gg/exampleclub";
+        var entry = ShoutHarvest.TryHarvest(text, ShoutHarvest.ShoutChannel, when, aggressive: true, zone: eastern);
+        Assert.NotNull(entry);
+        Assert.Equal(21, entry!.Ward);
+        Assert.Contains("plot 4", entry.Place, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("The Goblet", entry.Place, StringComparison.Ordinal);
+        Assert.Contains("Rafflesia", entry.Server, StringComparison.Ordinal);
+        var spot = HousingTravel.Find(entry.Place, entry.EventText, entry.Ward, entry.Server);
+        Assert.Equal("The Goblet", spot!.Value.District);
+        Assert.Equal(21, spot.Value.Ward);
+        Assert.Equal(4, spot.Value.Plot);
+        Assert.Equal("Rafflesia", spot.Value.World);
+        Assert.Equal("Ul'dah - Steps of Nald", spot.Value.City);
     }
 
     [Fact]
