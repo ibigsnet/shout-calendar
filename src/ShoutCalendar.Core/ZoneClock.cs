@@ -6,6 +6,7 @@ namespace ShoutCalendar.Core;
 /// <summary>
 /// A clock written in a shout, moved into the calendar's time zone when the text names one.
 /// PT, ET, CT, and MT are that region's wall time on the civil date. ST is left as written.
+/// A bare hour glued to a zone, such as 10ET, is that evening hour.
 /// </summary>
 public static class ZoneClock
 {
@@ -13,27 +14,113 @@ public static class ZoneClock
 
     public readonly record struct Face(DateOnly Date, TimeOnly? Time);
 
+    public readonly record struct Range(DateOnly Date, TimeOnly? Start, TimeOnly? End);
+
     private static readonly Regex ClockRegex = new(
-        @"\b(?:(?<h24>[01]?\d|2[0-3]):(?<m>[0-5]\d)(?:\s*(?<ampm>[ap]\.?m\.?))?|(?<h12>[1-9]|1[0-2])\s*(?<ampm2>[ap]\.?m\.?))\b",
+        @"\b(?:(?<h24>[01]?\d|2[0-3]):(?<m>[0-5]\d)(?:\s*(?<ampm>[ap](?:\.?m\.?)?))?|(?<h12>[1-9]|1[0-2])\s*(?<ampm2>[ap](?:\.?m\.?)?))\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private static readonly Regex RangeRegex = new(
+        @"(?<![A-Za-z0-9])(?<h1>\d{1,2})\s*(?<a1>[ap](?:\.?m\.?)?)?\s*[-–—]\s*(?<h2>\d{1,2})\s*(?<a2>[ap](?:\.?m\.?)?)?(?![A-Za-z0-9:])",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     private static readonly Regex ZoneRegex = new(
-        @"^\s*(?<zone>PDT|PST|EDT|EST|CDT|CST|MDT|MST|PT|ET|CT|MT|ST)\b",
+        @"^\s*[\(\[]?\s*(?<zone>PDT|PST|EDT|EST|CDT|CST|MDT|MST|PT|ET|CT|MT|ST)\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private static readonly Regex BetweenClocks = new(
+        @"^\s*(?:to|[-–—])\s*$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private static readonly Regex NowUntilRegex = new(
+        @"\b(?:right\s+now|now)\s*(?:to|till|until|[-–—])\s*",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private static readonly Regex MidnightRegex = new(
+        @"^midnight\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private static readonly Regex ZoneHourRegex = new(
+        @"(?<![A-Za-z0-9:])(?<h>1[0-2]|0?[1-9])\s*(?<zone>PDT|PST|EDT|EST|CDT|CST|MDT|MST|PT|ET|CT|MT)\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    /// <summary>"Now-12a ET" is the heard minute through that later clock. The zone labels the end only.</summary>
+    public static bool TryNowUntil(string? text, out Wall end)
+    {
+        end = default;
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+        var lead = NowUntilRegex.Match(text);
+        if (!lead.Success)
+            return false;
+        var rest = text[(lead.Index + lead.Length)..];
+        if (MidnightRegex.IsMatch(rest))
+        {
+            var midnight = MidnightRegex.Match(rest);
+            end = new Wall(new TimeOnly(0, 0), LabelAfter(rest, midnight));
+            return true;
+        }
+
+        var clock = ClockRegex.Match(rest);
+        if (!clock.Success || clock.Index != 0 || !TryRead(clock, out var time))
+            return false;
+        end = new Wall(time, LabelAfter(rest, clock));
+        return true;
+    }
 
     public static IReadOnlyList<Wall> Walls(string? text)
     {
-        var walls = new List<Wall>();
+        var found = new List<(int Index, int End, Wall Wall)>();
         if (string.IsNullOrWhiteSpace(text))
-            return walls;
-        foreach (Match match in ClockRegex.Matches(text))
+            return [];
+        var covered = new List<(int Start, int End)>();
+        foreach (Match match in RangeRegex.Matches(text))
         {
-            if (!TryRead(match, out var time))
+            if (!TryRange(match, out var start, out var end))
                 continue;
-            walls.Add(new Wall(time, LabelAfter(text, match)));
+            var label = LabelAfter(text, match);
+            var endAt = match.Index + match.Length;
+            found.Add((match.Index, endAt, new Wall(start, label)));
+            found.Add((match.Index + 1, endAt, new Wall(end, label)));
+            covered.Add((match.Index, endAt));
         }
 
-        return walls;
+        foreach (Match match in ClockRegex.Matches(text))
+        {
+            if (covered.Any(span => match.Index >= span.Start && match.Index < span.End))
+                continue;
+            if (!TryRead(match, out var time))
+                continue;
+            found.Add((match.Index, match.Index + match.Length, new Wall(time, LabelAfter(text, match))));
+        }
+
+        foreach (Match match in ZoneHourRegex.Matches(text))
+        {
+            var startAt = match.Index;
+            var endAt = match.Index + match.Length;
+            if (covered.Any(span => startAt < span.End && endAt > span.Start))
+                continue;
+            if (found.Any(item => startAt < item.End && endAt > item.Index))
+                continue;
+            if (!int.TryParse(match.Groups["h"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var hour))
+                continue;
+            if (!ToHour(hour, "p", out var time))
+                continue;
+            found.Add((startAt, endAt, new Wall(time, match.Groups["zone"].Value)));
+        }
+
+        found.Sort((left, right) => left.Index.CompareTo(right.Index));
+        for (var i = 0; i < found.Count - 1; i++)
+        {
+            if (Converts(found[i].Wall.Label) || !Converts(found[i + 1].Wall.Label))
+                continue;
+            var between = text[found[i].End..found[i + 1].Index];
+            if (!BetweenClocks.IsMatch(between))
+                continue;
+            found[i] = (found[i].Index, found[i].End, found[i].Wall with { Label = found[i + 1].Wall.Label });
+        }
+
+        return found.Select(item => item.Wall).ToArray();
     }
 
     public static bool Converts(string? label) => SourceId(label) is not null;
@@ -112,6 +199,62 @@ public static class ZoneClock
         return new Face(storedDate, entry.Time);
     }
 
+    /// <summary>Start and end to draw. A zone after "9pm to 12am (CT)" applies to both clocks.</summary>
+    public static Range ShownRange(CalendarEntry entry, TimeZoneInfo? calendarZone)
+    {
+        var storedDate = entry.Date ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        if (TryNowUntil(entry.EventText, out var until))
+        {
+            var untilEnd = entry.End ?? until.Time;
+            if (calendarZone is not null && Converts(until.Label) && entry.Time is TimeOnly begin)
+            {
+                var untilCivil = until.Time <= begin ? storedDate.AddDays(1) : storedDate;
+                untilEnd = Move(untilCivil, until.Time, until.Label, calendarZone).Time;
+            }
+
+            return new Range(storedDate, entry.Time, untilEnd);
+        }
+
+        if (calendarZone is null || string.IsNullOrWhiteSpace(entry.EventText))
+            return new Range(storedDate, entry.Time, entry.End);
+        var walls = Walls(entry.EventText);
+        if (walls.Count == 0 || !Converts(walls[0].Label))
+            return new Range(storedDate, entry.Time, entry.End);
+
+        var civil = CivilDate(storedDate, walls[0], entry.Time, calendarZone);
+        var start = Move(civil, walls[0].Time, walls[0].Label, calendarZone);
+        TimeOnly? end = entry.End;
+        if (walls.Count > 1 && Converts(walls[1].Label))
+        {
+            var endCivil = walls[1].Time <= walls[0].Time ? civil.AddDays(1) : civil;
+            end = Move(endCivil, walls[1].Time, walls[1].Label, calendarZone).Time;
+        }
+
+        return new Range(start.Date, start.Time, end);
+    }
+
+    private static DateOnly CivilDate(DateOnly stored, Wall wall, TimeOnly? storedTime, TimeZoneInfo zone)
+    {
+        if (storedTime is not TimeOnly time || time == wall.Time)
+            return stored;
+        var same = Move(stored, wall.Time, wall.Label, zone);
+        if (same.Date == stored && same.Time == time)
+            return stored;
+        foreach (var shift in new[] { -1, 1 })
+        {
+            if (shift < 0 && stored == DateOnly.MinValue)
+                continue;
+            if (shift > 0 && stored == DateOnly.MaxValue)
+                continue;
+            var civil = stored.AddDays(shift);
+            var moved = Move(civil, wall.Time, wall.Label, zone);
+            if (moved.Date == stored && moved.Time == time)
+                return civil;
+        }
+
+        return stored;
+    }
+
     /// <summary>Harvest already stored this converted instant, so the label must not be applied again.</summary>
     private static bool AlreadyShown(CalendarEntry entry, DateOnly storedDate, (DateOnly Date, TimeOnly Time) moved) =>
         entry.Time is TimeOnly stored && moved.Date == storedDate && moved.Time == stored;
@@ -135,6 +278,54 @@ public static class ZoneClock
             "MT" or "MDT" or "MST" => "America/Denver",
             _ => null,
         };
+    }
+
+    private static bool TryRange(Match match, out TimeOnly start, out TimeOnly end)
+    {
+        start = default;
+        end = default;
+        if (!int.TryParse(match.Groups["h1"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var h1))
+            return false;
+        if (!int.TryParse(match.Groups["h2"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var h2))
+            return false;
+        if (h1 > 23 || h2 > 23)
+            return false;
+        var startHalf = Half(match.Groups["a1"].Value);
+        var endHalf = Half(match.Groups["a2"].Value);
+        if (h1 > 12 || h2 > 12)
+        {
+            if (startHalf is not null || endHalf is not null)
+                return false;
+            start = new TimeOnly(h1, 0);
+            end = new TimeOnly(h2, 0);
+            return true;
+        }
+
+        if (h1 == 0 || h2 == 0)
+            return false;
+        startHalf ??= "p";
+        if (endHalf is null)
+            endHalf = h2 == 12 || h2 < h1 ? (startHalf == "p" ? "a" : "p") : startHalf;
+        return ToHour(h1, startHalf, out start) && ToHour(h2, endHalf, out end);
+    }
+
+    private static string? Half(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+        return raw.Trim().StartsWith('a') || raw.Trim().StartsWith('A') ? "a" : "p";
+    }
+
+    private static bool ToHour(int hour, string half, out TimeOnly time)
+    {
+        time = default;
+        if (hour is < 1 or > 12)
+            return false;
+        var clock = half == "a"
+            ? hour == 12 ? 0 : hour
+            : hour == 12 ? 12 : hour + 12;
+        time = new TimeOnly(clock, 0);
+        return true;
     }
 
     private static bool TryRead(Match match, out TimeOnly time)
@@ -161,9 +352,9 @@ public static class ZoneClock
             var marker = ampm.Replace(".", "", StringComparison.Ordinal).ToLowerInvariant();
             if (hour is < 1 or > 12)
                 return false;
-            if (marker == "am")
+            if (marker is "a" or "am")
                 hour = hour == 12 ? 0 : hour;
-            else if (marker == "pm")
+            else if (marker is "p" or "pm")
                 hour = hour == 12 ? 12 : hour + 12;
             else
                 return false;

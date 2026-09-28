@@ -17,6 +17,11 @@ public sealed class PluginConfig : IPluginConfiguration
     /// <summary>Null means the install defaults in <see cref="ChatChannels.DefaultIds"/>.</summary>
     public List<int>? WatchedChannels { get; set; }
 
+    /// <summary>Null means listening is on. False pauses harvest and keeps <see cref="PausedChannels"/>.</summary>
+    public bool? Listening { get; set; }
+
+    public List<int>? PausedChannels { get; set; }
+
     public int UnacceptedHoldDays { get; set; } = 1;
 
     /// <summary>When set, a new line is kept only if two of date, time, and place are present.</summary>
@@ -29,6 +34,15 @@ public sealed class PluginConfig : IPluginConfiguration
     public bool OpenRememberedLinks { get; set; }
 
     public bool AlarmAccepted { get; set; } = true;
+
+    /// <summary>Null means chat announcements stay on.</summary>
+    public bool? AlarmChat { get; set; }
+
+    /// <summary>When set, events leave this computer after their end time.</summary>
+    public bool DropPastEvents { get; set; }
+
+    /// <summary>Scale for text in the calendar window. 1 is the normal size.</summary>
+    public float TextScale { get; set; } = 1f;
 
     public bool AlarmUnaccepted { get; set; }
 
@@ -60,11 +74,26 @@ public sealed class PluginConfig : IPluginConfiguration
 
     public int AlarmMinutesBefore { get; set; } = 15;
 
+    /// <summary>When set, an alarm also rings on the minute the event starts.</summary>
+    public bool AlarmAtStart { get; set; } = true;
+
     public bool? ShowLocal { get; set; }
+
+    public bool? ShowLocalAccepted { get; set; }
+
+    public bool? ShowLocalUnaccepted { get; set; }
+
+    public bool? ShowSyncAccepted { get; set; }
+
+    public bool? ShowSyncUnaccepted { get; set; }
 
     public bool? ShowResets { get; set; }
 
     public Vector4 SyncPendingColor { get; set; } = new(0.45f, 0.28f, 0.72f, 0.95f);
+
+    public Vector4 TwitchColor { get; set; } = new(0.569f, 0.275f, 1f, 0.95f);
+
+    public Vector4 DiscordColor { get; set; } = new(0.345f, 0.396f, 0.949f, 0.95f);
 
     /// <summary>Null means <see cref="GameSchedule.DefaultIds"/>.</summary>
     public List<string>? EnabledResets { get; set; }
@@ -120,6 +149,14 @@ public sealed class StoredEvent
 
     public string SpeakerWorld { get; set; } = "";
 
+    public float? ColorR { get; set; }
+
+    public float? ColorG { get; set; }
+
+    public float? ColorB { get; set; }
+
+    public float? ColorA { get; set; }
+
     public static StoredEvent From(CalendarEntry entry)
     {
         return new StoredEvent
@@ -142,6 +179,10 @@ public sealed class StoredEvent
             NoteUpdated = entry.NoteUpdated,
             Manual = entry.Manual,
             SpeakerWorld = entry.SpeakerWorld,
+            ColorR = entry.Color?.X,
+            ColorG = entry.Color?.Y,
+            ColorB = entry.Color?.Z,
+            ColorA = entry.Color?.W,
         };
     }
 
@@ -188,7 +229,10 @@ public sealed class StoredEvent
             stored.Channel,
             stored.NoteUpdated,
             stored.Manual,
-            stored.SpeakerWorld);
+            stored.SpeakerWorld,
+            stored.ColorA is null
+                ? null
+                : new Vector4(stored.ColorR ?? 0f, stored.ColorG ?? 0f, stored.ColorB ?? 0f, stored.ColorA.Value));
         return true;
     }
 }

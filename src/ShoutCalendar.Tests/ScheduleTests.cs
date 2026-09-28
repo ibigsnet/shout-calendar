@@ -50,6 +50,10 @@ public class ScheduleTests
         Assert.True(segments.Count >= 2);
         Assert.Equal(6, segments[0].LastColumn);
         Assert.Equal(0, segments[^1].FirstColumn);
+        var week = new DateOnly(2026, 9, 27).AddDays(-(int)new DateOnly(2026, 9, 27).DayOfWeek);
+        var slice = GameSchedule.WeekSegment(week, nocturne.StartDate, nocturne.EndDate);
+        Assert.Equal(0, slice!.Value.FirstColumn);
+        Assert.Equal(6, slice.Value.LastColumn);
     }
 
     [Fact]

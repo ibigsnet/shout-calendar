@@ -13,6 +13,7 @@ using Dalamud.Plugin.Ipc;
 using Dalamud.Plugin.Ipc.Exceptions;
 using Dalamud.Interface.ImGuiFileDialog;
 using Dalamud.Plugin.Services;
+using Dalamud.Utility;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using Lumina.Excel.Sheets;
 using ShoutCalendar.Core;
@@ -76,12 +77,17 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         this.session.UseChannels(this.config.WatchedChannels);
+        if (this.config.Listening == false)
+            this.session.RememberPaused(this.config.PausedChannels);
         this.session.UnacceptedHoldDays = this.config.UnacceptedHoldDays < 1 ? 14 : this.config.UnacceptedHoldDays;
         this.session.AggressiveFilter = this.config.AggressiveFilter;
         this.session.Informedaholic = this.config.Informedaholic;
         this.session.RememberLinkChoice = this.config.RememberLinkChoice;
         this.session.OpenRememberedLinks = this.config.OpenRememberedLinks;
         this.session.AlarmAccepted = this.config.AlarmAccepted;
+        this.session.AlarmChat = this.config.AlarmChat ?? true;
+        this.session.DropPastEvents = this.config.DropPastEvents;
+        this.session.TextScale = this.config.TextScale is >= 0.85f and <= 2f ? this.config.TextScale : 1f;
         this.session.AlarmUnaccepted = this.config.AlarmUnaccepted;
         this.session.AcceptedSound = EventAlarm.ClampSound(this.config.AcceptedSound);
         this.session.UnacceptedSound = EventAlarm.ClampSound(this.config.UnacceptedSound);
@@ -97,16 +103,37 @@ public sealed class Plugin : IDalamudPlugin
         this.session.CactusColor = Shown(this.config.CactusColor, new Vector4(0.55f, 0.78f, 0.22f, 0.95f));
         this.session.EventColor = Shown(this.config.EventColor, new Vector4(0f, 0f, 1f, 0.64f));
         this.session.AlarmMinutesBefore = this.config.AlarmMinutesBefore < 0 ? 0 : this.config.AlarmMinutesBefore;
+        this.session.AlarmAtStart = this.config.AlarmAtStart;
         this.session.ShowLocal = this.config.ShowLocal ?? true;
+        this.session.ShowLocalAccepted = this.config.ShowLocalAccepted ?? this.config.ShowLocal ?? true;
+        this.session.ShowLocalUnaccepted = this.config.ShowLocalUnaccepted ?? this.config.ShowLocal ?? true;
+        this.session.ShowSyncAccepted = this.config.ShowSyncAccepted ?? true;
+        this.session.ShowSyncUnaccepted = this.config.ShowSyncUnaccepted ?? true;
         this.session.ShowResets = this.config.ShowResets ?? true;
         this.session.SyncPendingColor = Shown(this.config.SyncPendingColor, new Vector4(0.45f, 0.28f, 0.72f, 0.95f));
+        this.session.TwitchColor = Shown(this.config.TwitchColor, new Vector4(0.569f, 0.275f, 1f, 0.95f));
+        this.session.DiscordColor = Shown(this.config.DiscordColor, new Vector4(0.345f, 0.396f, 0.949f, 0.95f));
         this.session.UseResets(this.config.EnabledResets);
         this.session.CactpotRegion = GameSchedule.NormalizeRegion(this.config.CactpotRegion);
         this.session.Log.Restore(this.config.ToEntries());
-        if (this.session.Log.ExpireUnaccepted(DateTimeOffset.UtcNow, this.session.UnacceptedHoldDays) > 0)
+        var repaired = this.session.Log.Reharvest(entry =>
+        {
+            var when = entry.DetectedAt == default ? DateTimeOffset.Now : entry.DetectedAt;
+            var channel = entry.Channel == 0 ? ShoutHarvest.ShoutChannel : entry.Channel;
+            return ShoutHarvest.TryHarvest(
+                entry.EventText,
+                channel,
+                when,
+                this.session.Places,
+                this.session.Channels,
+                this.session.HousingHint,
+                aggressive: false,
+                zone: this.session.Zone);
+        });
+        if (repaired > 0 || this.session.Log.ExpireUnaccepted(DateTimeOffset.UtcNow, this.session.UnacceptedHoldDays) > 0)
             this.Save();
 
-        this.window = new CalendarWindow(this.session, this.clearPrompt, this.Save, this.PlayAlarm, this.dialogs, this.OpenPin);
+        this.window = new CalendarWindow(this.session, this.clearPrompt, this.Save, this.PlayAlarm, this.dialogs, this.OpenPin, this.OpenHousing);
         this.windowSystem = new WindowSystem("ShoutCalendar");
         this.windowSystem.AddWindow(this.window);
 
@@ -183,7 +210,17 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnFramework(IFramework framework)
     {
+        if (this.syncBook is not null)
+            this.syncBook.Worlds.Notice(this.DetectedWorld(this.syncBook.Worlds.Here));
         var now = DateTime.Now;
+        if (this.session.DropPastEvents)
+        {
+            var dropped = this.session.Log.ClearPast(now);
+            var shared = this.syncBook?.DismissPast(now) ?? 0;
+            if (dropped + shared > 0)
+                this.Save();
+        }
+
         var hits = EventAlarm.Due(
             this.session.Log.Entries,
             now,
@@ -192,6 +229,19 @@ public sealed class Plugin : IDalamudPlugin
             this.session.AlarmUnaccepted,
             this.session.AlarmMinutesBefore,
             TimeZoneInfo.Local);
+        if (this.session.AlarmAtStart && this.session.AlarmMinutesBefore > 0)
+        {
+            var starting = EventAlarm.Due(
+                this.session.Log.Entries,
+                now,
+                this.alarmMinute,
+                this.session.AlarmAccepted,
+                this.session.AlarmUnaccepted,
+                0,
+                TimeZoneInfo.Local);
+            if (starting.Count > 0)
+                hits = hits.Concat(starting.Select(hit => hit with { AtStart = true })).ToList();
+        }
         if (this.session.AlarmResets && this.session.ShowResets)
         {
             var resets = GameSchedule.Due(
@@ -203,7 +253,8 @@ public sealed class Plugin : IDalamudPlugin
                 this.session.AlarmMinutesBefore);
             if (resets.Count > 0)
             {
-                ChatGui.Print("Shout Calendar: reset " + string.Join(", ", resets.Select(mark => mark.Name)) + ".");
+                if (this.session.AlarmChat)
+                    ChatGui.Print("Shout Calendar: reset " + string.Join(", ", resets.Select(mark => mark.Name)) + ".");
                 this.PlayAlarm(this.session.ResetSound, this.session.ResetSoundFile);
             }
         }
@@ -218,7 +269,8 @@ public sealed class Plugin : IDalamudPlugin
             var entry = this.session.Log.Entries.FirstOrDefault(candidate => candidate.Id == hit.Id);
             if (entry is null)
                 continue;
-            this.Announce(entry, hit.Accepted);
+            var lead = hit.AtStart ? 0 : this.session.AlarmMinutesBefore;
+            this.Announce(entry, hit.Accepted, lead);
         }
     }
 
@@ -269,22 +321,22 @@ public sealed class Plugin : IDalamudPlugin
             return;
         foreach (var entry in due)
         {
-            var when = entry.Time?.ToString("HH:mm", CultureInfo.InvariantCulture) ?? "";
-            var place = string.IsNullOrWhiteSpace(entry.Place) ? "" : " " + entry.Place;
-            var note = entry.EventText.Length > 80 ? entry.EventText[..80] : entry.EventText;
-            ChatGui.Print($"Shout Calendar: accepted {when}{place}. {note}");
+            if (this.session.AlarmChat)
+            {
+                var lead = this.session.AlarmAtStart && EventAlarm.IsStartMinute(entry, now, TimeZoneInfo.Local)
+                    ? 0
+                    : this.session.AlarmMinutesBefore;
+                ChatGui.Print(AlarmNotice.Line(entry, lead));
+            }
         }
 
         this.PlayAlarm(this.session.AcceptedSound, this.session.AcceptedSoundFile);
     }
 
-    private void Announce(CalendarEntry entry, bool accepted)
+    private void Announce(CalendarEntry entry, bool accepted, int minutesBefore)
     {
-        var when = entry.Time?.ToString("HH:mm", CultureInfo.InvariantCulture) ?? "";
-        var place = string.IsNullOrWhiteSpace(entry.Place) ? "" : " " + entry.Place;
-        var note = entry.EventText.Length > 80 ? entry.EventText[..80] : entry.EventText;
-        var kind = accepted ? "accepted" : "pending";
-        ChatGui.Print($"Shout Calendar: {kind} {when}{place}. {note}");
+        if (this.session.AlarmChat)
+            ChatGui.Print(AlarmNotice.Line(entry, minutesBefore));
         this.PlayAlarm(
             accepted ? this.session.AcceptedSound : this.session.UnacceptedSound,
             accepted ? this.session.AcceptedSoundFile : this.session.UnacceptedSoundFile);
@@ -305,6 +357,54 @@ public sealed class Plugin : IDalamudPlugin
             this.OpenMap(place, x, y);
         if (!string.IsNullOrWhiteSpace(quest))
             this.PrintQuest(quest);
+    }
+
+    private void OpenHousing(HousingSpot spot)
+    {
+        if (!this.TryAetheryte(spot.City, out var x, out var y))
+        {
+            ChatGui.Print($"Shout Calendar: {spot.Label}. Teleport from the {spot.City} aetheryte.");
+            return;
+        }
+
+        this.OpenMap(spot.City, x, y);
+    }
+
+    private bool TryAetheryte(string place, out float x, out float y)
+    {
+        x = 0f;
+        y = 0f;
+        var sheet = DataManager.GetExcelSheet<Aetheryte>();
+        if (sheet is null)
+            return false;
+        var wanted = place.Replace('’', '\'').Replace('‘', '\'');
+        foreach (var row in sheet)
+        {
+            try
+            {
+                if (row.PlaceName.RowId == 0)
+                    continue;
+                var name = row.PlaceName.Value.Name.ExtractText().Replace('’', '\'').Replace('‘', '\'');
+                if (!name.Equals(wanted, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                var levelRef = row.Level.FirstOrDefault();
+                if (levelRef.RowId == 0)
+                    continue;
+                var level = levelRef.Value;
+                if (level.Map.RowId == 0)
+                    continue;
+                var map = level.Map.Value;
+                x = MapUtil.ConvertWorldCoordXZToMapCoord(level.X, map.SizeFactor, map.OffsetX);
+                y = MapUtil.ConvertWorldCoordXZToMapCoord(level.Z, map.SizeFactor, map.OffsetY);
+                return x > 0f && y > 0f;
+            }
+            catch (InvalidOperationException)
+            {
+                continue;
+            }
+        }
+
+        return false;
     }
 
     private void OpenMap(string place, float x, float y)
@@ -440,13 +540,18 @@ public sealed class Plugin : IDalamudPlugin
         this.config.Events.Clear();
         foreach (var entry in this.session.Log.Entries)
             this.config.Add(entry);
+        this.config.Listening = this.session.Listening;
         this.config.WatchedChannels = this.session.Channels.Order().ToList();
+        this.config.PausedChannels = this.session.Listening ? null : this.session.PausedChannels().ToList();
         this.config.UnacceptedHoldDays = this.session.UnacceptedHoldDays < 1 ? 14 : this.session.UnacceptedHoldDays;
         this.config.AggressiveFilter = this.session.AggressiveFilter;
         this.config.Informedaholic = this.session.Informedaholic;
         this.config.RememberLinkChoice = this.session.RememberLinkChoice;
         this.config.OpenRememberedLinks = this.session.OpenRememberedLinks;
         this.config.AlarmAccepted = this.session.AlarmAccepted;
+        this.config.AlarmChat = this.session.AlarmChat;
+        this.config.DropPastEvents = this.session.DropPastEvents;
+        this.config.TextScale = this.session.TextScale is >= 0.85f and <= 2f ? this.session.TextScale : 1f;
         this.config.AlarmUnaccepted = this.session.AlarmUnaccepted;
         this.config.AcceptedSound = EventAlarm.ClampSound(this.session.AcceptedSound);
         this.config.UnacceptedSound = EventAlarm.ClampSound(this.session.UnacceptedSound);
@@ -462,9 +567,16 @@ public sealed class Plugin : IDalamudPlugin
         this.config.CactusColor = this.session.CactusColor;
         this.config.EventColor = this.session.EventColor;
         this.config.AlarmMinutesBefore = this.session.AlarmMinutesBefore < 0 ? 0 : this.session.AlarmMinutesBefore;
+        this.config.AlarmAtStart = this.session.AlarmAtStart;
         this.config.ShowLocal = this.session.ShowLocal;
+        this.config.ShowLocalAccepted = this.session.ShowLocalAccepted;
+        this.config.ShowLocalUnaccepted = this.session.ShowLocalUnaccepted;
+        this.config.ShowSyncAccepted = this.session.ShowSyncAccepted;
+        this.config.ShowSyncUnaccepted = this.session.ShowSyncUnaccepted;
         this.config.ShowResets = this.session.ShowResets;
         this.config.SyncPendingColor = this.session.SyncPendingColor;
+        this.config.TwitchColor = this.session.TwitchColor;
+        this.config.DiscordColor = this.session.DiscordColor;
         this.config.EnabledResets = this.session.Resets.Order().ToList();
         this.config.CactpotRegion = GameSchedule.NormalizeRegion(this.session.CactpotRegion);
         PluginInterface.SavePluginConfig(this.config);
@@ -520,6 +632,8 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         var added = 0;
+        var joinSender = "";
+        var joinAt = DateTimeOffset.MinValue;
         foreach (var line in ChatLogReader.Read(bytes))
         {
             var key = line.TimestampUnix.ToString(CultureInfo.InvariantCulture)
@@ -527,9 +641,6 @@ public sealed class Plugin : IDalamudPlugin
                 + line.Channel.ToString(CultureInfo.InvariantCulture)
                 + ":"
                 + line.Message;
-            if (seen.Contains(key))
-                continue;
-
             DateTimeOffset when;
             try
             {
@@ -543,10 +654,23 @@ public sealed class Plugin : IDalamudPlugin
                 continue;
             }
 
-            if (!this.session.TryAddShout(line.Message, line.Channel, when, line.Sender))
+            var clean = SenderName.Clean(line.Sender);
+            var join = joinSender.Length > 0
+                && clean.Equals(joinSender, StringComparison.OrdinalIgnoreCase)
+                && when >= joinAt
+                && when - joinAt <= TimeSpan.FromMinutes(3);
+            if (seen.Contains(key) && !join)
                 continue;
+            if (!this.session.TryAddShout(line.Message, line.Channel, when, line.Sender))
+            {
+                joinSender = clean;
+                joinAt = when;
+                continue;
+            }
 
-            seen.Add(key);
+            joinSender = "";
+            if (!seen.Add(key))
+                continue;
             this.config.ImportedLogLines.Add(key);
             added++;
         }

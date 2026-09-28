@@ -15,6 +15,13 @@ public class LinkTests
         Assert.Equal("https://example.com/night", links[1].Url);
         Assert.False(LinkFinder.IsHttp("javascript:alert(1)"));
         Assert.Empty(LinkFinder.Find("no address here"));
+        var stream = LinkFinder.Find("drop by twitch.com/examplecaster");
+        var twitch = Assert.Single(stream);
+        Assert.Equal("https://twitch.tv/examplecaster", twitch.Url);
+        Assert.Equal("twitch.tv/examplecaster", twitch.Label);
+        var full = LinkFinder.Find("https://www.twitch.tv/examplecaster and twitch.com/examplecaster");
+        var once = Assert.Single(full);
+        Assert.Contains("examplecaster", once.Url, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

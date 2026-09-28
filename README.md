@@ -33,7 +33,7 @@ Pending invites are orange. Accepted invites are green and leave the left list. 
 
 Accepted and pending invites are saved across restarts. **Hold unaccepted for (days)** defaults to 1. Accepted invites stay until you delete them.
 
-**Aggressive filter** is on by default. A new line is kept only when two of a date, a time, and a place are present. Now, right now, and a line that ends with right count as the current time. Lines from the same player on the same chat, up to a minute apart, are read as one invite. A shout that names a world is filed on that world. A data center name, such as Crystal, is not a world.
+**Aggressive filter** is on by default. A new line is kept only when two of a date, a time, and a place are present. Now, right now, and a line that ends with right count as the current time. Lines from the same player on shout or yell, close together, are read as one invite. A shout that names a world is filed on that world. A data center name, such as Crystal, is not a world.
 
 **Add event** on Pending creates an invite on this computer only. Paste the details and use Read details, or type the date (`yyyy-MM-dd`), time (`HH:mm`), and location yourself. A hand-added event is not shared.
 

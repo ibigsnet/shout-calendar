@@ -12,6 +12,8 @@ public sealed class SyncSnapshot
 
     public string Selected { get; set; } = "";
 
+    public List<string> ViewedWorlds { get; set; } = new();
+
     public bool ShowSync { get; set; } = true;
 
     public string RelayHost { get; set; } = "";
@@ -131,9 +133,12 @@ public sealed class SyncBook
         return true;
     }
 
+    public int DismissPast(DateTime now, TimeZoneInfo? zone = null) =>
+        this.DismissMatching(item => PastEvents.Ended(item, now, zone));
+
     public int DismissOpen(ClearTarget target)
     {
-        var open = new HashSet<string>(this.Worlds.Selectable(), StringComparer.OrdinalIgnoreCase);
+        var open = new HashSet<string>(this.Worlds.Viewing(), StringComparer.OrdinalIgnoreCase);
         return this.DismissMatching(item => open.Contains(item.World) && target switch
         {
             ClearTarget.SyncAccepted => item.Accepted,
@@ -279,6 +284,7 @@ public sealed class SyncBook
             Limits = this.Limits,
             CheckedWorlds = this.Worlds.Extras().ToList(),
             Selected = this.Worlds.Selected,
+            ViewedWorlds = this.Worlds.Viewing().ToList(),
             ShowSync = this.ShowSync,
             RelayHost = this.RelayHost,
             RelayPort = this.RelayPort,
@@ -329,7 +335,9 @@ public sealed class SyncBook
         this.Worlds.ClearExtras();
         foreach (var world in snapshot.CheckedWorlds ?? [])
             this.Worlds.SetChecked(world, true);
-        if (!string.IsNullOrWhiteSpace(snapshot.Selected))
+        if (snapshot.ViewedWorlds is { Count: > 0 })
+            this.Worlds.UseView(snapshot.ViewedWorlds);
+        else if (!string.IsNullOrWhiteSpace(snapshot.Selected))
             this.Worlds.Select(snapshot.Selected);
         this.Events.Clear();
         foreach (var item in snapshot.Events ?? [])

@@ -24,10 +24,18 @@ public static class ServerNames
         "Aether", "Primal", "Crystal", "Dynamis", "Chaos", "Light", "Elemental", "Gaia", "Mana", "Meteor", "Materia",
     ];
 
+    private static readonly (string Alias, string Name)[] ShortNames =
+    [
+        ("Dyn", "Dynamis"),
+        ("Krak", "Kraken"),
+        ("Bryn", "Brynhildr"),
+        ("Crys", "Crystal"),
+    ];
+
     private static readonly Dictionary<string, string> CanonicalByFold = BuildCanonical();
 
     private static readonly Regex Pattern = new(
-        @"\b(?:" + string.Join("|", All.OrderByDescending(name => name.Length).Select(Regex.Escape)) + @")\b",
+        @"\b(?:" + string.Join("|", Tokens().OrderByDescending(name => name.Length).Select(Regex.Escape)) + @")\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     public static IReadOnlyList<string> Match(string text)
@@ -49,6 +57,16 @@ public static class ServerNames
         var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var name in All)
             map[name] = name;
+        foreach (var (alias, name) in ShortNames)
+            map[alias] = name;
         return map;
+    }
+
+    private static IEnumerable<string> Tokens()
+    {
+        foreach (var name in All)
+            yield return name;
+        foreach (var (alias, _) in ShortNames)
+            yield return alias;
     }
 }

@@ -35,6 +35,10 @@ public static class ShoutHarvest
         @"\b(?<m>1[0-2]|0?[1-9])/(?<d>3[01]|[12]\d|0?[1-9])/(?<y>\d{4}|\d{2})\b",
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
+    private static readonly Regex MonthDayRegex = new(
+        @"\b(?<mon>jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+(?<d>3[01]|[12]\d|0?[1-9])(?:st|nd|rd|th)?(?:,?\s*(?<y>\d{4}))?\b|\b(?<d2>3[01]|[12]\d|0?[1-9])(?:st|nd|rd|th)?\s+(?:of\s+)?(?<mon2>jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
     private static readonly Regex CoordinateRegex = new(
         @"\b[Xx]\s*[:=]?\s*(?<x>\d{1,2}(?:\.\d+)?)\b\s*[,/]?\s*\b[Yy]\s*[:=]?\s*(?<y>\d{1,2}(?:\.\d+)?)\b|\((?<x2>\d{1,2}\.\d+)\s*,\s*(?<y2>\d{1,2}\.\d+)\)",
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
@@ -57,15 +61,34 @@ public static class ShoutHarvest
             return null;
 
         var clocks = ReadClocks(text);
-        var localNow = shoutTimestamp.ToLocalTime().DateTime;
+        var heardLocal = zone is null
+            ? shoutTimestamp.ToLocalTime().DateTime
+            : TimeZoneInfo.ConvertTime(shoutTimestamp, zone).DateTime;
         DateOnly? nowDay = null;
-        if (clocks.Count == 0 && NowRegex.IsMatch(text))
+        var pinnedSpan = false;
+        if (ZoneClock.TryNowUntil(text, out var until))
         {
-            clocks.Add(TimeOnly.FromDateTime(localNow));
-            nowDay = DateOnly.FromDateTime(localNow);
+            var start = new TimeOnly(heardLocal.Hour, heardLocal.Minute);
+            var untilEnd = until.Time;
+            nowDay = DateOnly.FromDateTime(heardLocal);
+            if (zone is not null && ZoneClock.Converts(until.Label))
+            {
+                var untilCivil = untilEnd <= start ? nowDay.Value.AddDays(1) : nowDay.Value;
+                untilEnd = ZoneClock.Move(untilCivil, untilEnd, until.Label, zone).Time;
+            }
+
+            clocks = [start, untilEnd];
+            pinnedSpan = true;
+        }
+        else if (clocks.Count == 0 && NowRegex.IsMatch(text))
+        {
+            clocks.Add(new TimeOnly(heardLocal.Hour, heardLocal.Minute));
+            nowDay = DateOnly.FromDateTime(heardLocal);
         }
 
-        var statedDate = ReadDate(text) ?? ReadRelativeDay(text, shoutTimestamp) ?? ReadWeekday(text, shoutTimestamp);
+        var heard = HeardDay(shoutTimestamp, zone);
+        var writtenDate = ReadDate(text, heard);
+        var statedDate = writtenDate ?? ReadRelativeDay(text, heard) ?? ReadWeekday(text, heard);
 
         int? ward = null;
         var wardMatch = WardRegex.Match(text);
@@ -91,13 +114,16 @@ public static class ShoutHarvest
             placeParts.Add(coordinates);
         placeParts.AddRange(locations);
         placeParts.AddRange(servers);
+        var district = HousingTravel.DistrictName(text);
+        if (district is not null && !PlaceAlreadyNamesDistrict(placeParts))
+            placeParts.Add(district);
         if (ward is not null && housingHint is not null && !PlaceAlreadyNamesDistrict(placeParts))
             placeParts.Add(housingHint);
 
         var hasDate = statedDate is not null;
         var hasTime = clocks.Count > 0;
         var hasPlace = placeParts.Count > 0;
-        if (aggressive)
+        if (aggressive && writtenDate is null)
         {
             var signals = (hasDate ? 1 : 0) + (hasTime ? 1 : 0) + (hasPlace ? 1 : 0);
             if (signals < 2)
@@ -108,25 +134,29 @@ public static class ShoutHarvest
             return null;
         }
 
-        var repeat = ReadRepeat(text, statedDate ?? DateOnly.FromDateTime(shoutTimestamp.UtcDateTime));
+        var repeat = ReadRepeat(text, statedDate ?? heard);
         DateOnly? date = statedDate;
         if (repeat is not null)
-            date = repeat.FirstOnOrAfter(statedDate ?? DateOnly.FromDateTime(shoutTimestamp.UtcDateTime));
+            date = repeat.FirstOnOrAfter(statedDate ?? heard);
         else if (date is null && nowDay is not null)
             date = nowDay;
         else if (date is null && clocks.Count > 0)
-            date = DateOnly.FromDateTime(shoutTimestamp.UtcDateTime);
-        if (zone is not null && date is DateOnly civil && clocks.Count > 0)
+            date = heard;
+        if (!pinnedSpan && zone is not null && date is DateOnly civil && clocks.Count > 0)
         {
             var walls = ZoneClock.Walls(text);
             var shifted = new List<TimeOnly>(walls.Count);
             DateOnly? zonedDate = null;
+            TimeOnly? firstWall = null;
             foreach (var wall in walls)
             {
+                var civilForWall = firstWall is TimeOnly earlier && wall.Time <= earlier ? civil.AddDays(1) : civil;
                 var moved = ZoneClock.Converts(wall.Label)
-                    ? ZoneClock.Move(civil, wall.Time, wall.Label, zone)
-                    : (civil, wall.Time);
-                zonedDate ??= moved.Item1;
+                    ? ZoneClock.Move(civilForWall, wall.Time, wall.Label, zone)
+                    : (civilForWall, wall.Time);
+                if (firstWall is null)
+                    zonedDate = moved.Item1;
+                firstWall ??= wall.Time;
                 shifted.Add(moved.Item2);
             }
 
@@ -190,15 +220,28 @@ public static class ShoutHarvest
         @"\b(?<day>tomorrow|tonight|today)\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
-    private static DateOnly? ReadRelativeDay(string text, DateTimeOffset shoutTimestamp)
+    private static DateOnly HeardDay(DateTimeOffset shoutTimestamp, TimeZoneInfo? zone)
+    {
+        if (zone is null)
+            return DateOnly.FromDateTime(shoutTimestamp.UtcDateTime);
+        try
+        {
+            return DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(shoutTimestamp, zone).DateTime);
+        }
+        catch (ArgumentException)
+        {
+            return DateOnly.FromDateTime(shoutTimestamp.UtcDateTime);
+        }
+    }
+
+    private static DateOnly? ReadRelativeDay(string text, DateOnly heard)
     {
         var match = RelativeDayRegex.Match(text);
         if (!match.Success)
             return null;
-        var day = DateOnly.FromDateTime(shoutTimestamp.UtcDateTime);
         return match.Groups["day"].Value.Equals("tomorrow", StringComparison.OrdinalIgnoreCase)
-            ? day.AddDays(1)
-            : day;
+            ? heard.AddDays(1)
+            : heard;
     }
 
     private static readonly Regex EveryOtherRegex = new(
@@ -261,7 +304,7 @@ public static class ShoutHarvest
         return index < 0 ? null : (DayOfWeek)index;
     }
 
-    private static DateOnly? ReadWeekday(string text, DateTimeOffset shoutTimestamp)
+    private static DateOnly? ReadWeekday(string text, DateOnly today)
     {
         var match = WeekdayRegex.Match(text);
         if (!match.Success)
@@ -276,7 +319,6 @@ public static class ShoutHarvest
         if (target < 0)
             return null;
 
-        var today = DateOnly.FromDateTime(shoutTimestamp.UtcDateTime);
         var delta = (target - (int)today.DayOfWeek + 7) % 7;
         if (match.Groups["after"].Success)
             delta = delta == 0 ? 14 : delta + 7;
@@ -287,16 +329,58 @@ public static class ShoutHarvest
         return today.AddDays(delta);
     }
 
-    private static DateOnly? ReadDate(string text)
+    private static DateOnly? ReadDate(string text, DateOnly heard)
     {
         var match = DateRegex.Match(text);
-        if (!match.Success)
+        if (match.Success)
+        {
+            var month = int.Parse(match.Groups["m"].Value, CultureInfo.InvariantCulture);
+            var day = int.Parse(match.Groups["d"].Value, CultureInfo.InvariantCulture);
+            var year = int.Parse(match.Groups["y"].Value, CultureInfo.InvariantCulture);
+            if (year < 100)
+                year += 2000;
+            return TryDay(year, month, day);
+        }
+
+        var named = MonthDayRegex.Match(text);
+        if (!named.Success)
             return null;
-        var month = int.Parse(match.Groups["m"].Value, CultureInfo.InvariantCulture);
-        var day = int.Parse(match.Groups["d"].Value, CultureInfo.InvariantCulture);
-        var year = int.Parse(match.Groups["y"].Value, CultureInfo.InvariantCulture);
-        if (year < 100)
-            year += 2000;
+        var monthName = named.Groups["mon"].Success ? named.Groups["mon"].Value : named.Groups["mon2"].Value;
+        var dayText = named.Groups["d"].Success ? named.Groups["d"].Value : named.Groups["d2"].Value;
+        if (!MonthNumber(monthName, out var namedMonth))
+            return null;
+        var namedDay = int.Parse(dayText, CultureInfo.InvariantCulture);
+        if (named.Groups["y"].Success)
+            return TryDay(int.Parse(named.Groups["y"].Value, CultureInfo.InvariantCulture), namedMonth, namedDay);
+        var sameYear = TryDay(heard.Year, namedMonth, namedDay);
+        if (sameYear is DateOnly dayThisYear && dayThisYear < heard)
+            return TryDay(heard.Year + 1, namedMonth, namedDay);
+        return sameYear;
+    }
+
+    private static bool MonthNumber(string name, out int month)
+    {
+        month = name.ToLowerInvariant() switch
+        {
+            "jan" or "january" => 1,
+            "feb" or "february" => 2,
+            "mar" or "march" => 3,
+            "apr" or "april" => 4,
+            "may" => 5,
+            "jun" or "june" => 6,
+            "jul" or "july" => 7,
+            "aug" or "august" => 8,
+            "sep" or "sept" or "september" => 9,
+            "oct" or "october" => 10,
+            "nov" or "november" => 11,
+            "dec" or "december" => 12,
+            _ => 0,
+        };
+        return month != 0;
+    }
+
+    private static DateOnly? TryDay(int year, int month, int day)
+    {
         if (month is < 1 or > 12 || day is < 1 or > 31)
             return null;
         try

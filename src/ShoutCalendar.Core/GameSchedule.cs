@@ -277,6 +277,17 @@ public static class GameSchedule
         return segments;
     }
 
+    /// <summary>The part of a multi-day bar that falls inside one Sunday-start week.</summary>
+    public static SpanSegment? WeekSegment(DateOnly weekStart, DateOnly start, DateOnly end)
+    {
+        var weekEnd = weekStart.AddDays(6);
+        var from = start < weekStart ? weekStart : start;
+        var to = end > weekEnd ? weekEnd : end;
+        if (to < from)
+            return null;
+        return new SpanSegment(0, from.DayNumber - weekStart.DayNumber, to.DayNumber - weekStart.DayNumber);
+    }
+
     public static IReadOnlyDictionary<string, int> Lanes(IReadOnlyList<ScheduleOccurrence> items)
     {
         var lanes = new Dictionary<string, int>();

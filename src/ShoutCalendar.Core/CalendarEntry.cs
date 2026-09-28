@@ -1,3 +1,5 @@
+using System.Numerics;
+
 namespace ShoutCalendar.Core;
 
 /// <summary>
@@ -20,4 +22,5 @@ public sealed record CalendarEntry(
     int Channel = 0,
     bool NoteUpdated = false,
     bool Manual = false,
-    string SpeakerWorld = "");
+    string SpeakerWorld = "",
+    Vector4? Color = null);

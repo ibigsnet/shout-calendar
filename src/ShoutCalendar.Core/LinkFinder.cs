@@ -2,7 +2,7 @@ using System.Text.RegularExpressions;
 
 namespace ShoutCalendar.Core;
 
-/// <summary>Web and Discord addresses written inside an invite.</summary>
+/// <summary>Web, Discord, and Twitch addresses written inside an invite.</summary>
 public static partial class LinkFinder
 {
     public readonly record struct Found(string Label, string Url);
@@ -13,6 +13,10 @@ public static partial class LinkFinder
 
     private static readonly Regex DiscordRegex = new(
         @"(?:https?://)?(?:discord\.gg|discord(?:app)?\.com/invite)/([A-Za-z0-9-]+)",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private static readonly Regex TwitchRegex = new(
+        @"(?:https?://)?(?:www\.)?twitch\.(?:tv|com)/([A-Za-z0-9_]+)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     public static IReadOnlyList<Found> Find(string? text)
@@ -27,6 +31,17 @@ public static partial class LinkFinder
         {
             var url = "https://discord.gg/" + match.Groups[1].Value;
             if (ranked.Any(hit => hit.Url.Contains(match.Groups[1].Value, StringComparison.OrdinalIgnoreCase)))
+                continue;
+            ranked.Add((match.Index, url));
+        }
+
+        foreach (Match match in TwitchRegex.Matches(text))
+        {
+            var login = match.Groups[1].Value;
+            var url = "https://twitch.tv/" + login;
+            if (ranked.Any(hit =>
+                    hit.Url.Contains("twitch", StringComparison.OrdinalIgnoreCase)
+                    && hit.Url.Contains("/" + login, StringComparison.OrdinalIgnoreCase)))
                 continue;
             ranked.Add((match.Index, url));
         }

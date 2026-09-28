@@ -20,61 +20,58 @@ public static class EventTitle
     {
         if (string.IsNullOrEmpty(text))
             return "";
-        var phrases = new List<string>();
-        var word = new System.Text.StringBuilder();
-        var words = new List<string>();
-        void FlushWord()
+        var phrases = new List<(int Start, int End, int Words, int Letters)>();
+        var start = -1;
+        var words = 0;
+        var letters = 0;
+        var inWord = false;
+        void Close(int index)
         {
-            if (word.Length == 0)
-                return;
-            words.Add(word.ToString());
-            word.Clear();
+            if (start >= 0 && letters > 0)
+                phrases.Add((start, index, words, letters));
+            start = -1;
+            words = 0;
+            letters = 0;
+            inWord = false;
         }
 
-        void FlushPhrase()
+        for (var i = 0; i < text.Length; i++)
         {
-            FlushWord();
-            if (words.Count == 0)
-                return;
-            phrases.Add(string.Join(' ', words));
-            words.Clear();
-        }
-
-        foreach (var ch in text)
-        {
+            var ch = text[i];
             if (ch is >= '\uE071' and <= '\uE08A')
             {
-                word.Append((char)('A' + (ch - '\uE071')));
+                if (start < 0)
+                    start = i;
+                if (!inWord)
+                {
+                    words++;
+                    inWord = true;
+                }
+
+                letters++;
                 continue;
             }
 
-            if (ch is '\'' or '\u2019')
+            if (start >= 0 && (ch is '\'' or '\u2019' || char.IsWhiteSpace(ch) || ch is >= '\uE000' and <= '\uF8FF'))
             {
-                if (word.Length > 0)
-                    word.Append('\'');
+                inWord = false;
                 continue;
             }
 
-            if (char.IsWhiteSpace(ch) || ch is >= '\uE000' and <= '\uF8FF')
-            {
-                FlushWord();
-                continue;
-            }
-
-            FlushPhrase();
+            Close(i);
         }
 
-        FlushPhrase();
+        Close(text.Length);
         foreach (var phrase in phrases)
         {
-            if (phrase.Contains(' ', StringComparison.Ordinal))
-                return Pretty(phrase);
+            if (phrase.Words >= 2)
+                return text[phrase.Start..phrase.End].Trim();
         }
 
         foreach (var phrase in phrases)
         {
-            if (phrase.Length >= 4)
-                return Pretty(phrase);
+            if (phrase.Letters >= 4)
+                return text[phrase.Start..phrase.End].Trim();
         }
 
         return "";
@@ -89,23 +86,5 @@ public static class EventTitle
             return stars.Groups[1].Value.Trim();
         var corners = System.Text.RegularExpressions.Regex.Match(text, @"【\s*([^】\r\n]{2,40}?)\s*】");
         return corners.Success ? corners.Groups[1].Value.Trim() : "";
-    }
-
-    private static string Pretty(string upper)
-    {
-        var parts = upper.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        for (var i = 0; i < parts.Length; i++)
-        {
-            var word = parts[i].ToLowerInvariant();
-            if (word.Length == 0)
-                continue;
-            word = char.ToUpperInvariant(word[0]) + word[1..];
-            var mark = word.IndexOf('\'');
-            if (mark > 0 && mark < word.Length - 1)
-                word = word[..(mark + 1)] + char.ToLowerInvariant(word[mark + 1]) + word[(mark + 2)..];
-            parts[i] = word;
-        }
-
-        return string.Join(' ', parts);
     }
 }

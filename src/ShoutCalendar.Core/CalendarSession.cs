@@ -22,6 +22,11 @@ public sealed class CalendarSession
 
     public HashSet<int> Channels { get; } = new(ChatChannels.DefaultIds);
 
+    /// <summary>When false, no chat is harvested. Turning it back on restores only the chats that were on.</summary>
+    public bool Listening { get; private set; } = true;
+
+    private readonly HashSet<int> pausedChannels = new();
+
     public string? HousingHint { get; set; }
 
     /// <summary>Zone used when a shout names PT, ET, CT, or MT. Unset leaves those clocks as written.</summary>
@@ -42,6 +47,15 @@ public sealed class CalendarSession
     public bool OpenRememberedLinks { get; set; }
 
     public bool AlarmAccepted { get; set; } = true;
+
+    /// <summary>When set, a ringing alarm also prints the event in chat.</summary>
+    public bool AlarmChat { get; set; } = true;
+
+    /// <summary>When set, an event leaves this computer after its end time.</summary>
+    public bool DropPastEvents { get; set; }
+
+    /// <summary>Scale for text in the calendar window. 1 is the normal size.</summary>
+    public float TextScale { get; set; } = 1f;
 
     public bool AlarmUnaccepted { get; set; }
 
@@ -73,11 +87,26 @@ public sealed class CalendarSession
 
     public int AlarmMinutesBefore { get; set; } = 15;
 
+    /// <summary>When set, an alarm also rings on the minute the event starts.</summary>
+    public bool AlarmAtStart { get; set; } = true;
+
     public bool ShowLocal { get; set; } = true;
+
+    public bool ShowLocalAccepted { get; set; } = true;
+
+    public bool ShowLocalUnaccepted { get; set; } = true;
+
+    public bool ShowSyncAccepted { get; set; } = true;
+
+    public bool ShowSyncUnaccepted { get; set; } = true;
 
     public bool ShowResets { get; set; } = true;
 
     public Vector4 SyncPendingColor { get; set; } = new(0.45f, 0.28f, 0.72f, 0.95f);
+
+    public Vector4 TwitchColor { get; set; } = new(0.569f, 0.275f, 1f, 0.95f);
+
+    public Vector4 DiscordColor { get; set; } = new(0.345f, 0.396f, 0.949f, 0.95f);
 
     public HashSet<string> Resets { get; } = new(GameSchedule.DefaultIds);
 
@@ -117,11 +146,50 @@ public sealed class CalendarSession
     {
         if (!ChatChannels.IsKnown(channel))
             return;
+        var target = this.Listening ? this.Channels : this.pausedChannels;
         if (enabled)
-            this.Channels.Add(channel);
+            target.Add(channel);
         else
-            this.Channels.Remove(channel);
+            target.Remove(channel);
     }
+
+    public bool ChannelOn(int channel) =>
+        (this.Listening ? this.Channels : this.pausedChannels).Contains(channel);
+
+    public void SetListening(bool on)
+    {
+        if (on == this.Listening)
+            return;
+        if (!on)
+        {
+            this.pausedChannels.Clear();
+            foreach (var channel in this.Channels)
+                this.pausedChannels.Add(channel);
+            this.Channels.Clear();
+            this.Listening = false;
+            return;
+        }
+
+        this.Channels.Clear();
+        foreach (var channel in this.pausedChannels)
+            this.Channels.Add(channel);
+        this.Listening = true;
+    }
+
+    public void RememberPaused(IEnumerable<int>? saved)
+    {
+        this.pausedChannels.Clear();
+        foreach (var channel in saved ?? [])
+        {
+            if (ChatChannels.IsKnown(channel))
+                this.pausedChannels.Add(channel);
+        }
+
+        this.Channels.Clear();
+        this.Listening = false;
+    }
+
+    public IReadOnlyList<int> PausedChannels() => this.pausedChannels.Order().ToArray();
 
     public int Year { get; private set; }
 
@@ -159,7 +227,7 @@ public sealed class CalendarSession
             return false;
         detected = detected with
         {
-            Sender = sender?.Trim() ?? "",
+            Sender = SenderName.Clean(sender),
             SpeakerWorld = speakerWorld?.Trim() ?? "",
         };
         if (replaceId is not null && this.Log.Rewrite(replaceId, detected))

@@ -52,6 +52,41 @@ public static class EventIdentity
         return SameShout(leftWorld, leftText, rightWorld, rightText);
     }
 
+    /// <summary>The same person on shout or yell, within eight hours, is one invite unless the ward or plot changed.</summary>
+    public static bool SameSpeaker(CalendarEntry current, CalendarEntry incoming, DateTimeOffset when)
+    {
+        if (current.Manual || incoming.Manual)
+            return false;
+        if (string.IsNullOrWhiteSpace(current.Sender) || string.IsNullOrWhiteSpace(incoming.Sender))
+            return false;
+        if (!current.Sender.Equals(incoming.Sender, StringComparison.OrdinalIgnoreCase))
+            return false;
+        if (!SimilarChat(current.Channel, incoming.Channel))
+            return false;
+        var earlier = current.DetectedAt == default ? when : current.DetectedAt;
+        var gap = when - earlier;
+        if (gap < TimeSpan.Zero || gap > TimeSpan.FromHours(8))
+            return false;
+        if (current.Ward is int leftWard && incoming.Ward is int rightWard && leftWard != rightWard)
+            return false;
+        var leftPlot = Number(PlotRegex, $"{current.EventText} {current.Place}");
+        var rightPlot = Number(PlotRegex, $"{incoming.EventText} {incoming.Place}");
+        if (leftPlot is not null && rightPlot is not null && leftPlot != rightPlot)
+            return false;
+        var leftWorld = ShareWorld.Choose("", current.SpeakerWorld, current.Server);
+        var rightWorld = ShareWorld.Choose("", incoming.SpeakerWorld, incoming.Server);
+        return string.IsNullOrWhiteSpace(leftWorld)
+            || string.IsNullOrWhiteSpace(rightWorld)
+            || leftWorld.Equals(rightWorld, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool SimilarChat(int left, int right)
+    {
+        if (left == right)
+            return true;
+        return SharePolicy.IsShareable(left) && SharePolicy.IsShareable(right);
+    }
+
     private static int? Number(Regex regex, string? text)
     {
         if (string.IsNullOrWhiteSpace(text))

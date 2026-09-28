@@ -1,3 +1,5 @@
+using System.Numerics;
+
 namespace ShoutCalendar.Core;
 
 /// <summary>
@@ -13,7 +15,8 @@ public sealed class CalendarLog
     {
         if (entry is null)
             return false;
-        var same = this.entries.FindIndex(row => EventIdentity.SameEntry(row, entry));
+        var when = entry.DetectedAt == default ? DateTimeOffset.UtcNow : entry.DetectedAt;
+        var same = this.entries.FindIndex(row => EventIdentity.SameEntry(row, entry) || EventIdentity.SameSpeaker(row, entry, when));
         if (same >= 0)
         {
             var current = this.entries[same];
@@ -33,6 +36,36 @@ public sealed class CalendarLog
             entry = entry with { Id = Guid.NewGuid().ToString("N"), Accepted = false };
         this.entries.Add(Stamp(entry));
         return true;
+    }
+
+    public int Reharvest(Func<CalendarEntry, CalendarEntry?> read)
+    {
+        var changed = 0;
+        for (var i = 0; i < this.entries.Count; i++)
+        {
+            var current = this.entries[i];
+            if (current.Manual || current.NoteUpdated || string.IsNullOrWhiteSpace(current.EventText))
+                continue;
+            var next = read(current);
+            if (next is null)
+                continue;
+            var refreshClocks = ZoneClock.TryNowUntil(current.EventText, out _);
+            var updated = current with
+            {
+                Date = refreshClocks ? next.Date ?? current.Date : current.Date ?? next.Date,
+                Time = refreshClocks ? next.Time ?? current.Time : current.Time ?? next.Time,
+                End = refreshClocks ? next.End ?? current.End : current.End ?? next.End,
+                Ward = current.Ward ?? next.Ward,
+                Server = string.IsNullOrWhiteSpace(current.Server) ? next.Server : current.Server,
+                Place = next.Place.Length > current.Place.Length ? next.Place : current.Place,
+            };
+            if (updated == current)
+                continue;
+            this.entries[i] = updated;
+            changed++;
+        }
+
+        return changed;
     }
 
     public bool Rewrite(string id, CalendarEntry incoming)
@@ -87,6 +120,15 @@ public sealed class CalendarLog
         return true;
     }
 
+    public bool SetColor(string id, Vector4? color)
+    {
+        var index = this.entries.FindIndex(entry => entry.Id == id);
+        if (index < 0)
+            return false;
+        this.entries[index] = this.entries[index] with { Color = color };
+        return true;
+    }
+
     public bool Remove(string id)
     {
         var index = this.entries.FindIndex(entry => entry.Id == id);
@@ -135,6 +177,9 @@ public sealed class CalendarLog
     public int ClearAccepted() => this.entries.RemoveAll(entry => entry.Accepted);
 
     public int ClearUnaccepted() => this.entries.RemoveAll(entry => !entry.Accepted);
+
+    public int ClearPast(DateTime now, TimeZoneInfo? zone = null) =>
+        this.entries.RemoveAll(entry => PastEvents.Ended(entry, now, zone));
 
     private static CalendarEntry Stamp(CalendarEntry entry)
     {

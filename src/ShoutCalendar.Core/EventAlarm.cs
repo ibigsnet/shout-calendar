@@ -10,7 +10,7 @@ public static class EventAlarm
 
     public const int MaxSound = 16;
 
-    public readonly record struct Hit(string Id, bool Accepted);
+    public readonly record struct Hit(string Id, bool Accepted, bool AtStart = false);
 
     public static int ClampSound(int sound) => sound is >= MinSound and <= MaxSound ? sound : MinSound;
 
@@ -60,6 +60,16 @@ public static class EventAlarm
         }
 
         return hits;
+    }
+
+    public static bool IsStartMinute(CalendarEntry entry, DateTime now, TimeZoneInfo? zone = null)
+    {
+        if (!Clock(entry, zone, out var day, out var time) || string.IsNullOrEmpty(entry.Id))
+            return false;
+        var minute = MinuteOf(now);
+        if (!OnDay(entry, day, DateOnly.FromDateTime(minute)))
+            return false;
+        return minute.Hour == time.Hour && minute.Minute == time.Minute;
     }
 
     /// <summary>The warning time is this minute or already past, so accepting the invite should ring now.</summary>

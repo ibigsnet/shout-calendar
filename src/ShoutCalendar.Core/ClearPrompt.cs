@@ -7,6 +7,8 @@ public enum ClearTarget
     Unaccepted,
     SyncAccepted,
     SyncUnaccepted,
+    LocalPast,
+    SyncPast,
 }
 
 /// <summary>Yes/no confirmation before clearing shout history.</summary>
@@ -34,8 +36,12 @@ public sealed class ClearPrompt
             ClearTarget.Unaccepted => "Clear every unaccepted invite on this computer?",
             ClearTarget.SyncAccepted => "Clear every accepted shared invite on this computer?",
             ClearTarget.SyncUnaccepted => "Clear every unaccepted shared invite on this computer?",
+            ClearTarget.LocalPast => "Delete local events whose end time has passed on this computer?",
+            ClearTarget.SyncPast => "Delete shared events whose end time has passed on this computer?",
             _ => "Clear every local event on this computer?",
         };
+        if (this.Target is ClearTarget.LocalPast or ClearTarget.SyncPast)
+            return action;
         if (openServers is null || openServers.Count == 0)
             return action;
         var names = string.Join(", ", openServers);
@@ -55,8 +61,12 @@ public sealed class ClearPrompt
             case ClearTarget.Unaccepted:
                 log.ClearUnaccepted();
                 break;
+            case ClearTarget.LocalPast:
+                log.ClearPast(DateTime.Now);
+                break;
             case ClearTarget.SyncAccepted:
             case ClearTarget.SyncUnaccepted:
+            case ClearTarget.SyncPast:
                 break;
             default:
                 log.Clear();

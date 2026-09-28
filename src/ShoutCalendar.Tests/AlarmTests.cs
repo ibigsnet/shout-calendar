@@ -57,6 +57,9 @@ public class AlarmTests
 
         Assert.Single(hits);
         Assert.Empty(EventAlarm.Due([AcceptedAt(start)], start, EventAlarm.MinuteOf(start).AddMinutes(-1), true, false, 15));
+        Assert.Single(EventAlarm.Due([AcceptedAt(start)], start, EventAlarm.MinuteOf(start).AddMinutes(-1), true, false, 0));
+        Assert.True(EventAlarm.IsStartMinute(AcceptedAt(start), start));
+        Assert.Contains("is starting", AlarmNotice.Line(AcceptedAt(start), 0), StringComparison.Ordinal);
     }
 
     [Fact]

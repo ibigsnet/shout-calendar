@@ -51,18 +51,32 @@ public static class PlayableWorlds
 public sealed class WorldCalendar
 {
     private readonly HashSet<string> extras = new(StringComparer.Ordinal);
+    private readonly HashSet<string> viewing = new(StringComparer.Ordinal);
+    private string lastPicked = "";
 
     public WorldCalendar(string currentWorld)
     {
         if (!PlayableWorlds.TryCanonical(currentWorld, out var home))
             throw new ArgumentException("The current world is not a playable world.", nameof(currentWorld));
         this.Home = home;
+        this.Here = home;
         this.Selected = home;
+        this.lastPicked = home;
+        this.viewing.Add(home);
     }
 
     public string Home { get; }
 
+    /// <summary>The world the player is standing on.</summary>
+    public string Here { get; private set; }
+
     public string Selected { get; private set; }
+
+    public void Notice(string? world)
+    {
+        if (PlayableWorlds.TryCanonical(world, out var here))
+            this.Here = here;
+    }
 
     public bool IsChecked(string world)
     {
@@ -82,8 +96,127 @@ public sealed class WorldCalendar
         }
 
         this.extras.Remove(canonical);
+        this.viewing.Remove(canonical);
+        if (this.viewing.Count == 0)
+            this.viewing.Add(this.Home);
         if (this.Selected == canonical)
             this.Selected = this.Home;
+    }
+
+    public bool IsViewing(string world)
+    {
+        if (!PlayableWorlds.TryCanonical(world, out var canonical))
+            return false;
+        return this.viewing.Contains(canonical);
+    }
+
+    public void SetViewing(string world, bool on)
+    {
+        if (!PlayableWorlds.TryCanonical(world, out var canonical) || !this.IsChecked(canonical))
+            return;
+        if (on)
+        {
+            this.viewing.Add(canonical);
+            this.Selected = canonical;
+            this.lastPicked = canonical;
+            return;
+        }
+
+        if (this.viewing.Count <= 1 && this.viewing.Contains(canonical))
+            return;
+        this.viewing.Remove(canonical);
+        this.KeepSelection();
+    }
+
+    public void SetViewDataCenter(string dataCenter, bool on)
+    {
+        foreach (var group in DataCenters.All)
+        {
+            if (!group.Name.Equals(dataCenter, StringComparison.OrdinalIgnoreCase))
+                continue;
+            foreach (var world in group.Worlds)
+            {
+                if (!this.IsChecked(world) || !PlayableWorlds.TryCanonical(world, out var canonical))
+                    continue;
+                if (on)
+                    this.viewing.Add(canonical);
+                else
+                    this.viewing.Remove(canonical);
+            }
+
+            if (this.viewing.Count == 0)
+                this.RestoreLastPicked();
+            else
+                this.KeepSelection();
+            return;
+        }
+    }
+
+    private void KeepSelection()
+    {
+        if (this.viewing.Contains(this.Selected))
+            return;
+        this.Selected = this.Viewing().FirstOrDefault() ?? this.Home;
+    }
+
+    private void RestoreLastPicked()
+    {
+        var restore = this.Home;
+        if (PlayableWorlds.TryCanonical(this.lastPicked, out var picked) && this.IsChecked(picked))
+            restore = picked;
+        this.viewing.Add(restore);
+        this.Selected = restore;
+    }
+
+    public bool DataCenterViewed(string dataCenter)
+    {
+        var any = false;
+        foreach (var group in DataCenters.All)
+        {
+            if (!group.Name.Equals(dataCenter, StringComparison.OrdinalIgnoreCase))
+                continue;
+            foreach (var world in group.Worlds)
+            {
+                if (!this.IsChecked(world))
+                    continue;
+                any = true;
+                if (!this.IsViewing(world))
+                    return false;
+            }
+
+            return any;
+        }
+
+        return false;
+    }
+
+    public IReadOnlyList<string> Viewing()
+    {
+        var list = new List<string>();
+        foreach (var world in PlayableWorlds.All)
+        {
+            if (this.viewing.Contains(world))
+                list.Add(world);
+        }
+
+        return list;
+    }
+
+    public void UseView(IEnumerable<string>? worlds)
+    {
+        var next = new List<string>();
+        foreach (var world in worlds ?? [])
+        {
+            if (PlayableWorlds.TryCanonical(world, out var canonical) && this.IsChecked(canonical))
+                next.Add(canonical);
+        }
+
+        if (next.Count == 0)
+            return;
+        this.viewing.Clear();
+        foreach (var world in next)
+            this.viewing.Add(world);
+        this.KeepSelection();
     }
 
     public void SetDataCenter(string dataCenter, bool on)
@@ -141,15 +274,17 @@ public sealed class WorldCalendar
     {
         if (!PlayableWorlds.TryCanonical(world, out var canonical))
             return false;
-        if (!this.Selectable().Contains(canonical, StringComparer.Ordinal))
+        if (!this.IsChecked(canonical))
             return false;
+        this.viewing.Clear();
+        this.viewing.Add(canonical);
         this.Selected = canonical;
         return true;
     }
 
     public IReadOnlyList<SyncAnnouncement> Visible(IEnumerable<SyncAnnouncement> events)
     {
-        var open = new HashSet<string>(this.Selectable(), StringComparer.OrdinalIgnoreCase);
+        var open = new HashSet<string>(this.Viewing(), StringComparer.OrdinalIgnoreCase);
         return events.Where(item => open.Contains(item.World)).ToArray();
     }
 
@@ -157,13 +292,13 @@ public sealed class WorldCalendar
     {
         if (entry.Manual)
             return true;
-        if (this.Selected.Equals(this.Home, StringComparison.OrdinalIgnoreCase))
+        if (this.IsViewing(this.Home))
             return true;
         if (string.IsNullOrWhiteSpace(entry.Server))
             return false;
         foreach (var part in entry.Server.Split(','))
         {
-            if (part.Trim().Equals(this.Selected, StringComparison.OrdinalIgnoreCase))
+            if (this.IsViewing(part.Trim()))
                 return true;
         }
 
@@ -173,6 +308,8 @@ public sealed class WorldCalendar
     public void ClearExtras()
     {
         this.extras.Clear();
+        this.viewing.Clear();
+        this.viewing.Add(this.Home);
         this.Selected = this.Home;
     }
 }

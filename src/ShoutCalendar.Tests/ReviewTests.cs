@@ -1,3 +1,4 @@
+using System.Numerics;
 using System.Text;
 using ShoutCalendar.Core;
 
@@ -171,6 +172,7 @@ public class ReviewTests
 
         var book = new SyncBook("Diabolos");
         book.Worlds.SetChecked("Goblin", true);
+        book.Worlds.SetViewing("Goblin", true);
         book.Events.Add(new SyncAnnouncement { Id = "home", World = "Diabolos", Channel = 11, Text = "Maps at 8:00pm ward 13", Accepted = true, FromSync = true });
         book.Events.Add(new SyncAnnouncement { Id = "gob", World = "Goblin", Channel = 11, Text = "Open at 3pm ward 2", FromSync = true });
         book.Events.Add(new SyncAnnouncement { Id = "zal", World = "Zalera", Channel = 11, Text = "Open at 4pm ward 3", FromSync = true });
@@ -179,6 +181,54 @@ public class ReviewTests
         Assert.DoesNotContain(book.Events, row => row.Id == "gob");
         Assert.Equal(1, book.DismissOpen(ClearTarget.SyncAccepted));
         Assert.DoesNotContain(book.Events, row => row.Id == "home");
+    }
+
+    [Fact]
+    public void DeletePastRemovesEndedEventsAndKeepsLaterAndRepeatingOnes()
+    {
+        var session = new CalendarSession(new DateOnly(2026, 9, 27));
+        var heard = new DateTimeOffset(2026, 9, 27, 12, 0, 0, TimeSpan.Zero);
+        Assert.True(session.TryAddShout("Open 8:00-9:00 ward 1", ShoutHarvest.ShoutChannel, heard, "Mina"));
+        Assert.True(session.TryAddShout("Open 8pm-11pm ward 2", ShoutHarvest.ShoutChannel, heard, "Ada"));
+        Assert.True(session.TryAddShout("tomorrow at 8pm ward 3", ShoutHarvest.ShoutChannel, heard, "Mina"));
+        Assert.True(session.TryAddShout("every Tuesday at 6pm on W4 P4", ShoutHarvest.ShoutChannel, heard, "Ada"));
+        var now = new DateTime(2026, 9, 27, 21, 0, 0);
+        Assert.Equal(1, session.Log.ClearPast(now));
+        Assert.DoesNotContain(session.Log.Entries, entry => entry.EventText.Contains("8:00-9:00", StringComparison.Ordinal));
+        Assert.Contains(session.Log.Entries, entry => entry.EventText.Contains("8pm-11pm", StringComparison.Ordinal));
+        Assert.Contains(session.Log.Entries, entry => entry.EventText.Contains("tomorrow", StringComparison.Ordinal));
+        Assert.Contains(session.Log.Entries, entry => entry.Repeat is not null);
+
+        var prompt = new ClearPrompt();
+        prompt.Ask(ClearTarget.LocalPast);
+        Assert.Equal("Delete local events whose end time has passed on this computer?", prompt.Question([], ""));
+        prompt.Ask(ClearTarget.SyncPast);
+        Assert.Equal("Delete shared events whose end time has passed on this computer?", prompt.Question(["Diabolos"], "Diabolos"));
+
+        var book = new SyncBook("Diabolos");
+        book.Events.Add(new SyncAnnouncement
+        {
+            Id = "ended",
+            World = "Diabolos",
+            Date = "2026-09-27",
+            Time = "08:00",
+            Text = "Open 8:00-9:00 ward 1",
+            FromSync = true,
+            Accepted = true,
+        });
+        book.Events.Add(new SyncAnnouncement
+        {
+            Id = "later",
+            World = "Diabolos",
+            Date = "2026-09-27",
+            Time = "20:00",
+            Text = "Open 8pm-11pm ward 2",
+            FromSync = true,
+            Accepted = true,
+        });
+        Assert.Equal(1, book.DismissPast(now));
+        Assert.Contains(book.Events, row => row.Id == "later");
+        Assert.DoesNotContain(book.Events, row => row.Id == "ended");
     }
 
     [Fact]
@@ -201,5 +251,94 @@ public class ReviewTests
         var harvested = Assert.Single(ShoutHarvest.HarvestLog(LogFixture.File(0, entry)));
         Assert.Equal(9, harvested.Ward);
         Assert.False(harvested.Accepted);
+    }
+
+    [Fact]
+    public void PausingChatRestoresOnlyTheChannelsThatWereOn()
+    {
+        var session = new CalendarSession(new DateOnly(2026, 9, 27));
+        session.UseChannels(ChatChannels.DefaultIds);
+        Assert.Contains(ShoutHarvest.ShoutChannel, session.Channels);
+        Assert.DoesNotContain(14, session.Channels);
+        session.SetChannel(10, false);
+        var before = session.Channels.Order().ToArray();
+
+        session.SetListening(false);
+        Assert.False(session.Listening);
+        Assert.Empty(session.Channels);
+        Assert.False(session.TryAddShout("8:00pm ward 4", ShoutHarvest.ShoutChannel, new DateTimeOffset(2026, 9, 27, 18, 0, 0, TimeSpan.Zero), "Mina"));
+        Assert.Empty(session.Log.Entries);
+
+        session.SetListening(true);
+        Assert.Equal(before, session.Channels.Order().ToArray());
+        Assert.DoesNotContain(10, session.Channels);
+        Assert.DoesNotContain(14, session.Channels);
+        Assert.Contains(ShoutHarvest.ShoutChannel, session.Channels);
+    }
+
+    [Fact]
+    public void AnAlarmNamesTheEventAndHowSoonItStarts()
+    {
+        var entry = new CalendarEntry(
+            new DateOnly(2026, 9, 27),
+            new TimeOnly(18, 0),
+            null,
+            14,
+            "Goblin",
+            "The Lavender Beds, ward 14, plot 8",
+            "Open at 3pm PT, Goblin > Lavender Beds > Ward 14, Plot 8",
+            "Tirita Rita",
+            true,
+            "toast",
+            default);
+        var line = AlarmNotice.Line(entry, 15);
+        Assert.StartsWith("Shout Calendar:", line, StringComparison.Ordinal);
+        Assert.Contains("starts in 15 minutes", line, StringComparison.Ordinal);
+        Assert.Contains("18:00", line, StringComparison.Ordinal);
+        Assert.Contains("2026-09-27", line, StringComparison.Ordinal);
+        Assert.Contains("Lavender Beds", line, StringComparison.Ordinal);
+        Assert.Contains("Tirita Rita", line, StringComparison.Ordinal);
+        Assert.Contains("3pm PT", line, StringComparison.Ordinal);
+        Assert.Contains("is starting", AlarmNotice.Line(entry, 0), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AShoutNoteBreaksIntoReadableLines()
+    {
+        var lines = NoteLayout.Lines("OPEN TONIGHT 8-12 / Crystal Zalera Goblet W7 P5 / MIL + Giveaways. Art sketches.");
+        Assert.Equal(
+            ["OPEN TONIGHT 8-12", "Crystal Zalera Goblet W7 P5", "MIL + Giveaways. Art sketches."],
+            lines);
+    }
+
+    [Fact]
+    public void APassedAcceptedColorKeepsAGreyerTone()
+    {
+        var green = new Vector4(0.12f, 0.48f, 0.24f, 0.95f);
+        var grey = PastTone.Grey(green);
+        Assert.True(grey.Y < green.Y);
+        Assert.InRange(Math.Abs(grey.X - grey.Y) + Math.Abs(grey.Y - grey.Z), 0f, Math.Abs(green.X - green.Y) + Math.Abs(green.Y - green.Z));
+        var evening = new DateTime(2026, 9, 27, 21, 0, 0);
+        Assert.True(PastTone.Ended(new DateOnly(2026, 9, 27), new TimeOnly(18, 0), null, evening));
+        Assert.False(PastTone.Ended(new DateOnly(2026, 9, 27), new TimeOnly(22, 0), null, evening));
+        Assert.False(PastTone.Ended(new DateOnly(2026, 9, 27), new TimeOnly(20, 0), new TimeOnly(0, 0), evening));
+    }
+
+    [Fact]
+    public void ATwitchOrDiscordLinkPicksThatBrand()
+    {
+        var twitch = EventKind.Find("Live at https://twitch.tv/tinybubbles tonight");
+        Assert.Equal("Twitch", twitch?.Name);
+        Assert.InRange(twitch!.Value.Color.Z, 0.9f, 1f);
+        Assert.True(twitch.Value.Color.X > twitch.Value.Color.Y);
+
+        var discord = EventKind.Find("join discord.gg/lalaween for the night");
+        Assert.Equal("Discord", discord?.Name);
+        Assert.True(discord!.Value.Color.Z > discord.Value.Color.X);
+        Assert.True(discord.Value.Color.Z > discord.Value.Color.Y);
+
+        Assert.Equal("Twitch", EventKind.Find("twitch first, then discord.gg/room")?.Name);
+        Assert.Equal("YouTube", EventKind.Find("watch https://youtu.be/abc")?.Name);
+        Assert.Null(EventKind.Find("bards and prizes, no stream"));
     }
 }

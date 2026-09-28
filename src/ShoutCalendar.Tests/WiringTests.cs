@@ -17,6 +17,12 @@ public class WiringTests
         Assert.Contains("this.session.CurrentMonth()", window, StringComparison.Ordinal);
         Assert.Contains("this.session.Page(", window, StringComparison.Ordinal);
         Assert.Contains("Button(\"Today\")", window, StringComparison.Ordinal);
+        Assert.Contains("folderDay = todayDate.Day", window, StringComparison.Ordinal);
+        Assert.Contains("InputTextWithHint(\"##event-search\", \"Search\"", window, StringComparison.Ordinal);
+        Assert.Contains("Delete past local", window, StringComparison.Ordinal);
+        Assert.Contains("Delete past sync", window, StringComparison.Ordinal);
+        Assert.Contains("Delete past events##drop-past", window, StringComparison.Ordinal);
+        Assert.Contains("this.editingId = null;", window, StringComparison.Ordinal);
         Assert.Contains("OngoingCheck.IsOngoing", window, StringComparison.Ordinal);
         Assert.Contains("month.Cells", window, StringComparison.Ordinal);
         Assert.Contains("Accept", window, StringComparison.Ordinal);
@@ -34,7 +40,12 @@ public class WiringTests
         Assert.Contains("BeginTabItem(\"Settings\")", window, StringComparison.Ordinal);
         Assert.Contains("BeginTabItem(\"Colors\")", window, StringComparison.Ordinal);
         Assert.Contains("###day-folder", window, StringComparison.Ordinal);
-        Assert.Contains("Pending alerts show below.", window, StringComparison.Ordinal);
+        Assert.Contains("Local accepted", window, StringComparison.Ordinal);
+        Assert.Contains("Local unaccepted", window, StringComparison.Ordinal);
+        Assert.Contains("Sync accepted", window, StringComparison.Ordinal);
+        Assert.Contains("Sync unaccepted", window, StringComparison.Ordinal);
+        Assert.Contains("Announce in chat", window, StringComparison.Ordinal);
+        Assert.Contains("Warn when it starts##alarm-start", window, StringComparison.Ordinal);
         Assert.Contains("PickerHueWheel", window, StringComparison.Ordinal);
         Assert.Contains("Alarm resets", window, StringComparison.Ordinal);
         Assert.Contains("Test accepted", window, StringComparison.Ordinal);
