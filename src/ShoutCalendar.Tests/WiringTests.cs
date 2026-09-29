@@ -102,29 +102,6 @@ public class WiringTests
         Assert.Contains("RelayReach.Online", window, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void QuestionsRecordAsksTheUndecidedBehavior()
-    {
-        var questions = File.ReadAllText(Path.Combine(RepoRoot(), "QUESTIONS.md"));
-        Assert.Contains("display name and author", questions, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("GitHub", questions, StringComparison.Ordinal);
-        Assert.Contains("official Dalamud", questions, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("AI model", questions, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("ST", questions, StringComparison.Ordinal);
-        Assert.Contains("ET", questions, StringComparison.Ordinal);
-        Assert.Contains("PT", questions, StringComparison.Ordinal);
-        Assert.Contains("Eorzea", questions, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("tonight", questions, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("in 20 minutes", questions, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("one-time shout stays ongoing", questions, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("repeated shout", questions, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("duplicate", questions, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("beyond ward numbers and server names", questions, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Channels besides shout", questions, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("this client only", questions, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("DevMode", questions, StringComparison.Ordinal);
-    }
-
     private static string RepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

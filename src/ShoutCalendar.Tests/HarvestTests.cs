@@ -339,7 +339,7 @@ public class HarvestTests
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null)
         {
-            if (File.Exists(Path.Combine(dir.FullName, "QUESTIONS.md")))
+            if (File.Exists(Path.Combine(dir.FullName, "src", "ShoutCalendar", "Plugin.cs")))
                 return dir.FullName;
             dir = dir.Parent;
         }
@@ -1107,5 +1107,27 @@ public class HarvestTests
         Assert.Contains("The Goblet", entry.Place, StringComparison.Ordinal);
         Assert.Contains("plot 5", entry.Place, StringComparison.OrdinalIgnoreCase);
         Assert.Equal("Mina Willow", entry.Sender);
+    }
+
+    [Fact]
+    public void UntilADateWithoutAVenueIsNotAnInvite()
+    {
+        var when = new DateTimeOffset(2026, 9, 29, 4, 0, 0, TimeSpan.Zero);
+        Assert.Null(ShoutHarvest.TryHarvest("says till oct 19", ShoutHarvest.ShoutChannel, when, aggressive: true));
+        Assert.Null(ShoutHarvest.TryHarvest(
+            "part 1 goes until October 19th, so around 6 weeks.",
+            ShoutHarvest.ShoutChannel,
+            when,
+            aggressive: true));
+        Assert.False(ShoutHarvest.IsSharedEvent("says till oct 19", ShoutHarvest.ShoutChannel, when));
+        Assert.False(ShoutHarvest.IsSharedEvent("part 1 goes until October 19th, so around 6 weeks.", ShoutHarvest.ShoutChannel, when));
+
+        var kept = ShoutHarvest.TryHarvest(
+            "returns on Oct 3 at the Goblet ward 4 plot 8",
+            ShoutHarvest.ShoutChannel,
+            when,
+            aggressive: true);
+        Assert.NotNull(kept);
+        Assert.Equal(new DateOnly(2026, 10, 3), kept!.Date);
     }
 }

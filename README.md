@@ -47,10 +47,6 @@ The left side has **Pending**, **Settings**, **Resets**, and **Colors**. Sync se
 
 Each alarm has its own `<se.#>` and an optional WAV file. An empty file uses the chat sound. Reset alarms are separate from accepted and pending invites. A weekday such as "next Tuesday", and a glued ward such as `W3P26`, count toward the date and the place.
 
-## Official plugin list
-
-The official list is a separate review. It is a pull request to [goatcorp/DalamudPluginsD17](https://github.com/goatcorp/DalamudPluginsD17) with a `manifest.toml`, a square `icon.png` (64 to 512 pixels), and a pass through the testing track. That pull request has not been opened.
-
 ## Build
 
 ```bash
