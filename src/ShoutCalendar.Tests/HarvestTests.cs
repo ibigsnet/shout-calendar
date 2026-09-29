@@ -93,9 +93,10 @@ public class HarvestTests
         Assert.Equal(new DateOnly(2026, 9, 27), stillTonight.Date);
         Assert.Null(tonight.Time);
 
-        var later = ShoutHarvest.TryHarvest("in 20 minutes on Faerie", ShoutHarvest.ShoutChannel, ShoutAt);
+        var later = ShoutHarvest.TryHarvest("in 20 minutes on Faerie", ShoutHarvest.ShoutChannel, ShoutAt, zone: TimeZoneInfo.Utc);
         Assert.NotNull(later);
-        Assert.Null(later.Date);
+        Assert.Equal(new DateOnly(2026, 9, 26), later.Date);
+        Assert.Equal(new TimeOnly(18, 50), later.Time);
         Assert.Contains("Faerie", later.Place);
 
         var bells = ShoutHarvest.TryHarvest("12 bells ward 13", ShoutHarvest.ShoutChannel, ShoutAt);
@@ -274,6 +275,19 @@ public class HarvestTests
 
         var unknown = heard with { SpeakerWorld = "" };
         Assert.Equal("Diabolos", SyncAnnouncement.FromLocal(unknown, "Diabolos").World);
+
+        var raff = heard with
+        {
+            Server = "Diabolos",
+            SpeakerWorld = "Diabolos",
+            EventText = "NOW @ Raff•Goblet•Ward 21•Plot 4 at 8pm",
+        };
+        Assert.Equal("Rafflesia", SyncAnnouncement.FromLocal(raff, "Diabolos").World);
+        Assert.True(ServerNames.TryAdvertised("Diablos Goblet W1 P1", out var typo));
+        Assert.Equal("Diabolos", typo);
+        Assert.True(ServerNames.ForServer(raff.EventText, "Diabolos", "Rafflesia"));
+        Assert.False(ServerNames.ForServer(raff.EventText, "Diabolos", "Diabolos"));
+        Assert.False(ServerNames.TryAdvertised("Ser party", out _));
 
         var hand = heard with { Manual = true, Channel = 0 };
         Assert.Empty(SyncExport.FromLocal(new SyncBook("Diabolos"), [hand]));
@@ -671,7 +685,8 @@ public class HarvestTests
         Assert.Equal(new TimeOnly(12, 0), ShoutHarvest.TryHarvest("Open at 3pm ET ward 1", ShoutHarvest.ShoutChannel, when, aggressive: true, zone: pacific)!.Time);
         Assert.Equal(new TimeOnly(16, 0), ShoutHarvest.TryHarvest("Open at 3pm CT ward 1", ShoutHarvest.ShoutChannel, when, aggressive: true, zone: eastern)!.Time);
         Assert.Equal(new TimeOnly(17, 0), ShoutHarvest.TryHarvest("Open at 3pm MT ward 1", ShoutHarvest.ShoutChannel, when, aggressive: true, zone: eastern)!.Time);
-        Assert.Null(ShoutHarvest.TryHarvest("in 20 minutes on Faerie", ShoutHarvest.ShoutChannel, when, zone: eastern)!.Time);
+        var departing = ShoutHarvest.TryHarvest("in 20 minutes on Faerie", ShoutHarvest.ShoutChannel, when, zone: eastern);
+        Assert.Equal(new TimeOnly(18, 9), departing!.Time);
 
         var stored = entry with { Time = new TimeOnly(15, 0), Id = "toast", Accepted = true };
         var face = ZoneClock.Shown(stored, eastern);
@@ -832,6 +847,90 @@ public class HarvestTests
         worlds.SetViewing("Zalera", false);
         Assert.Contains("Mateus", worlds.Viewing());
         Assert.Equal("Mateus", worlds.Selected);
+    }
+
+    [Fact]
+    public void MidnightEndStaysOnTheStartDayAndOneMinutePastSpans()
+    {
+        var day = new DateOnly(2026, 9, 27);
+        var start = new TimeOnly(20, 0);
+        Assert.False(Overnight.Is(start, new TimeOnly(0, 0)));
+        Assert.True(Overnight.Covers(day, day, start, new TimeOnly(0, 0)));
+        Assert.False(Overnight.Covers(day.AddDays(1), day, start, new TimeOnly(0, 0)));
+        Assert.Null(Overnight.Span(day, start, new TimeOnly(0, 0)));
+
+        Assert.True(Overnight.Is(start, new TimeOnly(0, 1)));
+        Assert.True(Overnight.Covers(day.AddDays(1), day, start, new TimeOnly(0, 1)));
+        Assert.Equal((day, day.AddDays(1)), Overnight.Span(day, start, new TimeOnly(0, 1)));
+
+        var session = new CalendarSession(day);
+        Assert.True(session.TryAddShout("Open 20:00-0:00 ward 3", ShoutHarvest.ShoutChannel, ShoutAt, "Mina"));
+        var entry = Assert.Single(session.Log.Entries);
+        Assert.Equal(start, entry.Time);
+        Assert.Equal(new TimeOnly(0, 0), entry.End);
+        var stored = entry.Date!.Value;
+        var month = CalendarMonth.Create(stored.Year, stored.Month, session.Log.Entries);
+        Assert.Contains(entry, month.OnDay(stored.Day));
+        var following = stored.AddDays(1);
+        if (following.Month == stored.Month)
+            Assert.DoesNotContain(entry, month.OnDay(following.Day));
+    }
+
+    [Fact]
+    public void AnOvernightRangeCoversTheNextCalendarDay()
+    {
+        var session = new CalendarSession(new DateOnly(2026, 9, 27));
+        Assert.True(session.TryAddShout("Open 11pm-6am ward 3", ShoutHarvest.ShoutChannel, ShoutAt, "Mina"));
+        var entry = Assert.Single(session.Log.Entries);
+        Assert.Equal(new TimeOnly(23, 0), entry.Time);
+        Assert.Equal(new TimeOnly(6, 0), entry.End);
+        Assert.True(Overnight.Is(entry.Time, entry.End));
+        var start = entry.Date!.Value;
+        Assert.True(Overnight.Covers(start, start, entry.Time, entry.End));
+        Assert.True(Overnight.Covers(start.AddDays(1), start, entry.Time, entry.End));
+        Assert.False(Overnight.Covers(start.AddDays(2), start, entry.Time, entry.End));
+        var month = CalendarMonth.Create(start.Year, start.Month, session.Log.Entries);
+        Assert.Contains(entry, month.OnDay(start.Day));
+        var next = start.AddDays(1);
+        if (next.Month == start.Month)
+            Assert.Contains(entry, month.OnDay(next.Day));
+    }
+
+    [Fact]
+    public void AHuntTrainWithSpacedCoordinatesAndACountdownIsKept()
+    {
+        var heard = new DateTimeOffset(2026, 9, 28, 18, 0, 0, TimeSpan.Zero);
+        const string text = "RELAY—> DIABOLOS DT/EW/SHB **TRIPLE** HUNT Train is leaving from \uE0BBUrqopacha ( 28.0  , 13.2 ) in 6 min";
+        var entry = ShoutHarvest.TryHarvest(text, ShoutHarvest.ShoutChannel, heard, aggressive: true, zone: TimeZoneInfo.Utc);
+
+        Assert.NotNull(entry);
+        Assert.Equal(new TimeOnly(18, 6), entry!.Time);
+        Assert.Contains("Urqopacha", entry.Place, StringComparison.Ordinal);
+        Assert.Contains("x 28, y 13.2", entry.Place, StringComparison.Ordinal);
+        Assert.Contains("Diabolos", entry.Place, StringComparison.Ordinal);
+        var spot = Assert.Single(MapMentions.Read(text));
+        Assert.Equal(28.0f, spot.X);
+        Assert.Equal(13.2f, spot.Y);
+        Assert.Equal("Urqopacha", spot.Place);
+    }
+
+    [Fact]
+    public void AGobletNightWithAGluedClockRangeIsKept()
+    {
+        var entry = ShoutHarvest.TryHarvest(
+            "Mood Swing 8PM-12AM EST. Golem Goblet W21 P35.",
+            ShoutHarvest.ShoutChannel,
+            new DateTimeOffset(2026, 9, 28, 22, 0, 0, TimeSpan.Zero),
+            aggressive: true,
+            zone: TimeZoneInfo.FindSystemTimeZoneById("America/New_York"));
+
+        Assert.NotNull(entry);
+        Assert.Equal(new TimeOnly(20, 0), entry!.Time);
+        Assert.Equal(new TimeOnly(0, 0), entry.End);
+        Assert.Equal(21, entry.Ward);
+        Assert.Contains("plot 35", entry.Place, StringComparison.Ordinal);
+        Assert.Contains("The Goblet", entry.Place, StringComparison.Ordinal);
+        Assert.Contains("Golem", entry.Place, StringComparison.Ordinal);
     }
 
     [Fact]

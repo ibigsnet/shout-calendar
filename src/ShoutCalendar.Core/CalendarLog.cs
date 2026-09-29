@@ -143,8 +143,32 @@ public sealed class CalendarLog
         var index = this.entries.FindIndex(entry => entry.Id == id);
         if (index < 0 || this.entries[index].Accepted)
             return false;
-        this.entries[index] = this.entries[index] with { Accepted = true };
+        this.entries[index] = this.entries[index] with { Accepted = true, Hidden = false };
         return true;
+    }
+
+    public bool SetHidden(string id, bool hidden)
+    {
+        var index = this.entries.FindIndex(entry => entry.Id == id);
+        if (index < 0 || this.entries[index].Hidden == hidden)
+            return false;
+        this.entries[index] = this.entries[index] with { Hidden = hidden };
+        return true;
+    }
+
+    /// <summary>Park or restore every invite that is still waiting. Accepted rows stay as they are.</summary>
+    public int SetPendingHidden(bool hidden)
+    {
+        var count = 0;
+        for (var i = 0; i < this.entries.Count; i++)
+        {
+            if (this.entries[i].Accepted || this.entries[i].Hidden == hidden)
+                continue;
+            this.entries[i] = this.entries[i] with { Hidden = hidden };
+            count++;
+        }
+
+        return count;
     }
 
     public int AcceptPending()

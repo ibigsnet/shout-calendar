@@ -6,10 +6,10 @@ namespace ShoutCalendar.Core;
 /// <summary>Map coordinates written in a shout or a schedule note.</summary>
 public static partial class MapMentions
 {
-    public readonly record struct Spot(float X, float Y);
+    public readonly record struct Spot(float X, float Y, string Place = "");
 
     private static readonly Regex Pair = new(
-        @"(?:\(\s*|\bx\s+)(?<x>\d{1,2}(?:\.\d+)?)\s*(?:,\s*y|,|\s+y)\s*(?<y>\d{1,2}(?:\.\d+)?)\)?",
+        @"(?:(?<![A-Za-z])(?:[\uE000-\uF8FF]+\s*)?(?-i:(?<zone>[A-Z][A-Za-z'’.\-]*(?:\s+[A-Z][A-Za-z'’.\-]*){0,4}))\s+)?\(\s*(?<x>\d{1,2}(?:\.\d+)?)\s*,\s*(?<y>\d{1,2}(?:\.\d+)?)\s*\)|\bx\s+(?<x>\d{1,2}(?:\.\d+)?)\s*(?:,\s*y|,|\s+y)\s*(?<y>\d{1,2}(?:\.\d+)?)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     public static IReadOnlyList<Spot> Read(string? text)
@@ -28,7 +28,8 @@ public static partial class MapMentions
                 continue;
             if (found.Any(spot => Math.Abs(spot.X - x) < 0.05f && Math.Abs(spot.Y - y) < 0.05f))
                 continue;
-            found.Add(new Spot(x, y));
+            var zone = match.Groups["zone"].Success ? match.Groups["zone"].Value.Trim() : "";
+            found.Add(new Spot(x, y, zone));
         }
 
         return found;

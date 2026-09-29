@@ -34,7 +34,10 @@ public sealed class SyncAnnouncement
 
     public bool Declined { get; set; }
 
-    public bool IsSyncPending => this.FromSync && !this.HarvestedLocally && !this.Accepted && !this.Declined;
+    /// <summary>Parked locally. Not a decline and not a tombstone.</summary>
+    public bool Hidden { get; set; }
+
+    public bool IsSyncPending => this.FromSync && !this.HarvestedLocally && !this.Accepted && !this.Declined && !this.Hidden;
 
     public string ColorToken => this.IsSyncPending ? "sync-pending" : this.Accepted ? "accepted" : "pending";
 
@@ -42,7 +45,7 @@ public sealed class SyncAnnouncement
 
     public static SyncAnnouncement FromLocal(CalendarEntry entry, string homeWorld)
     {
-        var world = ShareWorld.Choose(homeWorld, entry.SpeakerWorld, entry.Server);
+        var world = ShareWorld.Choose(homeWorld, entry.SpeakerWorld, entry.Server, entry.EventText);
 
         return new SyncAnnouncement
         {

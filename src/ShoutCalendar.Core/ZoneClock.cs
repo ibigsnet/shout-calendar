@@ -208,7 +208,7 @@ public static class ZoneClock
             var untilEnd = entry.End ?? until.Time;
             if (calendarZone is not null && Converts(until.Label) && entry.Time is TimeOnly begin)
             {
-                var untilCivil = until.Time <= begin ? storedDate.AddDays(1) : storedDate;
+                var untilCivil = Overnight.ContinuesNextDay(begin, until.Time) ? storedDate.AddDays(1) : storedDate;
                 untilEnd = Move(untilCivil, until.Time, until.Label, calendarZone).Time;
             }
 
@@ -226,7 +226,7 @@ public static class ZoneClock
         TimeOnly? end = entry.End;
         if (walls.Count > 1 && Converts(walls[1].Label))
         {
-            var endCivil = walls[1].Time <= walls[0].Time ? civil.AddDays(1) : civil;
+            var endCivil = Overnight.ContinuesNextDay(walls[0].Time, walls[1].Time) ? civil.AddDays(1) : civil;
             end = Move(endCivil, walls[1].Time, walls[1].Label, calendarZone).Time;
         }
 

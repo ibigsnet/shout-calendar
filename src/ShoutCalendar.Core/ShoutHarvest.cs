@@ -39,9 +39,9 @@ public static class ShoutHarvest
         @"\b(?<mon>jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+(?<d>3[01]|[12]\d|0?[1-9])(?:st|nd|rd|th)?(?:,?\s*(?<y>\d{4}))?\b|\b(?<d2>3[01]|[12]\d|0?[1-9])(?:st|nd|rd|th)?\s+(?:of\s+)?(?<mon2>jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
-    private static readonly Regex CoordinateRegex = new(
-        @"\b[Xx]\s*[:=]?\s*(?<x>\d{1,2}(?:\.\d+)?)\b\s*[,/]?\s*\b[Yy]\s*[:=]?\s*(?<y>\d{1,2}(?:\.\d+)?)\b|\((?<x2>\d{1,2}\.\d+)\s*,\s*(?<y2>\d{1,2}\.\d+)\)",
-        RegexOptions.CultureInvariant | RegexOptions.Compiled);
+    private static readonly Regex InMinutesRegex = new(
+        @"\bin\s+(?<n>\d{1,3})\s*(?:minutes?|mins?)\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     private static readonly Regex PlaceWordRegex = new(
         @"\b(?<kind>plot|apartment|room|house|cottage)[\s\-–—·•．.]*#?[\s\-–—·•．.]*(?<n>\d{1,3})\b|\b(?<sub>subdivision)\b",
@@ -74,12 +74,18 @@ public static class ShoutHarvest
             nowDay = DateOnly.FromDateTime(heardLocal);
             if (zone is not null && ZoneClock.Converts(until.Label))
             {
-                var untilCivil = untilEnd <= start ? nowDay.Value.AddDays(1) : nowDay.Value;
+                var untilCivil = Overnight.ContinuesNextDay(start, untilEnd) ? nowDay.Value.AddDays(1) : nowDay.Value;
                 untilEnd = ZoneClock.Move(untilCivil, untilEnd, until.Label, zone).Time;
             }
 
             clocks = [start, untilEnd];
             pinnedSpan = true;
+        }
+        else if (clocks.Count == 0 && TryInMinutes(text, out var minutes))
+        {
+            var departs = heardLocal.AddMinutes(minutes);
+            clocks.Add(TimeOnly.FromDateTime(departs));
+            nowDay = DateOnly.FromDateTime(departs);
         }
         else if (clocks.Count == 0 && NowRegex.IsMatch(text))
         {
@@ -100,6 +106,7 @@ public static class ShoutHarvest
         var servers = ServerNames.Match(text);
         var locations = (places ?? PlaceCatalog.Empty).Match(text);
         var coordinates = ReadCoordinates(text);
+        var coordinateZone = MapMentions.Read(text).Select(spot => spot.Place).FirstOrDefault(place => !string.IsNullOrEmpty(place)) ?? "";
         var extras = ReadPlaceWords(text);
         if (!extras.Any(extra => extra.StartsWith("plot ", StringComparison.Ordinal)))
         {
@@ -112,6 +119,8 @@ public static class ShoutHarvest
         if (ward is int wardNumber)
             placeParts.Add($"ward {wardNumber.ToString(CultureInfo.InvariantCulture)}");
         placeParts.AddRange(extras);
+        if (!string.IsNullOrEmpty(coordinateZone) && !placeParts.Any(part => part.Contains(coordinateZone, StringComparison.OrdinalIgnoreCase)))
+            placeParts.Add(coordinateZone);
         if (coordinates is not null)
             placeParts.Add(coordinates);
         placeParts.AddRange(locations);
@@ -124,7 +133,7 @@ public static class ShoutHarvest
 
         var strongDate = writtenDate is not null;
         var strongTime = pinnedSpan || (clocks.Count > 0 && !nowOnly);
-        var strongPlace = ward is not null || coordinates is not null || district is not null || extras.Count > 0;
+        var strongPlace = ward is not null || coordinates is not null || coordinateZone.Length > 0 || district is not null || extras.Count > 0;
         var hasDate = statedDate is not null;
         var hasTime = clocks.Count > 0;
         var hasPlace = placeParts.Count > 0;
@@ -161,7 +170,7 @@ public static class ShoutHarvest
             TimeOnly? firstWall = null;
             foreach (var wall in walls)
             {
-                var civilForWall = firstWall is TimeOnly earlier && wall.Time <= earlier ? civil.AddDays(1) : civil;
+                var civilForWall = firstWall is TimeOnly earlier && Overnight.ContinuesNextDay(earlier, wall.Time) ? civil.AddDays(1) : civil;
                 var moved = ZoneClock.Converts(wall.Label)
                     ? ZoneClock.Move(civilForWall, wall.Time, wall.Label, zone)
                     : (civilForWall, wall.Time);
@@ -419,14 +428,23 @@ public static class ShoutHarvest
         return false;
     }
 
+    private static bool TryInMinutes(string text, out int minutes)
+    {
+        minutes = 0;
+        var match = InMinutesRegex.Match(text);
+        if (!match.Success)
+            return false;
+        if (!int.TryParse(match.Groups["n"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out minutes))
+            return false;
+        return minutes is >= 1 and <= 180;
+    }
+
     private static string? ReadCoordinates(string text)
     {
-        var match = CoordinateRegex.Match(text);
-        if (!match.Success)
+        var spot = MapMentions.Read(text).FirstOrDefault();
+        if (spot.X == 0 && spot.Y == 0 && string.IsNullOrEmpty(spot.Place))
             return null;
-        var x = match.Groups["x"].Success ? match.Groups["x"].Value : match.Groups["x2"].Value;
-        var y = match.Groups["y"].Success ? match.Groups["y"].Value : match.Groups["y2"].Value;
-        return $"x {x}, y {y}";
+        return FormattableString.Invariant($"x {spot.X:0.##}, y {spot.Y:0.##}");
     }
 
     private static List<TimeOnly> ReadClocks(string text)

@@ -66,11 +66,13 @@ public sealed class PluginConfig : IPluginConfiguration
 
     public Vector4 TodayColor { get; set; } = new(1f, 1f, 1f, 0.19f);
 
+    public Vector4 OutsideColor { get; set; } = new(0.22f, 0.22f, 0.24f, 0.427f);
+
     public Vector4 CrystalColor { get; set; } = new(0.18f, 0.52f, 0.86f, 0.95f);
 
     public Vector4 CactusColor { get; set; } = new(0.55f, 0.78f, 0.22f, 0.95f);
 
-    public Vector4 EventColor { get; set; } = new(0f, 0f, 1f, 0.64f);
+    public Vector4 EventColor { get; set; } = new(0.144f, 0f, 1f, 0.64f);
 
     public int AlarmMinutesBefore { get; set; } = 15;
 
@@ -87,9 +89,19 @@ public sealed class PluginConfig : IPluginConfiguration
 
     public bool? ShowSyncUnaccepted { get; set; }
 
+    public bool? ShowHidden { get; set; }
+
+    public bool NewestFirst { get; set; }
+
+    public float WeekDetailShare { get; set; } = 0.28f;
+
+    public bool ShowAllServers { get; set; }
+
     public bool? ShowResets { get; set; }
 
-    public Vector4 SyncPendingColor { get; set; } = new(0.45f, 0.28f, 0.72f, 0.95f);
+    public Vector4 SyncPendingColor { get; set; } = new(0.63f, 0.28f, 0.72f, 0.95f);
+
+    public Vector4 SharedBarColor { get; set; } = new(0.95f, 0.05f, 0.05f, 1f);
 
     public Vector4 TwitchColor { get; set; } = new(0.569f, 0.275f, 1f, 0.95f);
 
@@ -147,6 +159,8 @@ public sealed class StoredEvent
 
     public bool Manual { get; set; }
 
+    public bool Hidden { get; set; }
+
     public string SpeakerWorld { get; set; } = "";
 
     public float? ColorR { get; set; }
@@ -178,6 +192,7 @@ public sealed class StoredEvent
             Channel = entry.Channel,
             NoteUpdated = entry.NoteUpdated,
             Manual = entry.Manual,
+            Hidden = entry.Hidden,
             SpeakerWorld = entry.SpeakerWorld,
             ColorR = entry.Color?.X,
             ColorG = entry.Color?.Y,
@@ -232,7 +247,8 @@ public sealed class StoredEvent
             stored.SpeakerWorld,
             stored.ColorA is null
                 ? null
-                : new Vector4(stored.ColorR ?? 0f, stored.ColorG ?? 0f, stored.ColorB ?? 0f, stored.ColorA.Value));
+                : new Vector4(stored.ColorR ?? 0f, stored.ColorG ?? 0f, stored.ColorB ?? 0f, stored.ColorA.Value),
+            stored.Hidden);
         return true;
     }
 }

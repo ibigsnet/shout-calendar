@@ -184,6 +184,83 @@ public class ReviewTests
     }
 
     [Fact]
+    public void HideParksALocalInviteUntilShowHidden()
+    {
+        var session = new CalendarSession(new DateOnly(2026, 9, 27));
+        Assert.True(session.TryAddShout("8:00pm ward 13", ShoutHarvest.ShoutChannel, ShoutAt, "Mina"));
+        var id = session.Log.Entries[0].Id;
+        Assert.True(session.Log.SetHidden(id, true));
+        var hidden = Assert.Single(session.Log.Entries);
+        Assert.True(hidden.Hidden);
+        Assert.False(hidden.Accepted);
+        Assert.False(session.ShowHidden);
+        Assert.True(session.Log.SetHidden(id, false));
+        Assert.False(session.Log.Entries[0].Hidden);
+        Assert.True(session.Log.SetHidden(id, true));
+        Assert.True(session.Log.Accept(id));
+        Assert.True(session.Log.Entries[0].Accepted);
+        Assert.False(session.Log.Entries[0].Hidden);
+        Assert.True(session.Log.Remove(id));
+        Assert.Empty(session.Log.Entries);
+    }
+
+    [Fact]
+    public void HideAllParksPendingAndUnhideAllBringsThemBack()
+    {
+        var session = new CalendarSession(new DateOnly(2026, 9, 27));
+        Assert.True(session.TryAddShout("8:00pm ward 13", ShoutHarvest.ShoutChannel, ShoutAt, "Mina"));
+        Assert.True(session.TryAddShout("9:00pm ward 4", ShoutHarvest.ShoutChannel, ShoutAt, "Ada"));
+        var kept = session.Log.Entries[0].Id;
+        Assert.True(session.Log.Accept(kept));
+        Assert.Equal(1, session.Log.SetPendingHidden(true));
+        Assert.True(session.Log.Entries.Single(entry => entry.Id == kept).Accepted);
+        Assert.False(session.Log.Entries.Single(entry => entry.Id == kept).Hidden);
+        Assert.Single(session.Log.Entries, entry => entry.Hidden);
+        Assert.Equal(1, session.Log.SetPendingHidden(false));
+        Assert.DoesNotContain(session.Log.Entries, entry => entry.Hidden);
+
+        var book = new SyncBook("Diabolos");
+        book.Events.Add(new SyncAnnouncement { Id = "park", World = "Diabolos", Channel = 11, Text = "Maps at 8:00pm ward 13", FromSync = true });
+        book.Events.Add(new SyncAnnouncement { Id = "no", World = "Diabolos", Channel = 11, Text = "Maps at 9:00pm ward 2", FromSync = true, Declined = true });
+        Assert.Equal(1, book.HidePending(true));
+        Assert.True(book.Events.Single(row => row.Id == "park").Hidden);
+        Assert.False(book.Events.Single(row => row.Id == "no").Hidden);
+        Assert.Equal(1, book.HidePending(false));
+        Assert.False(book.Events.Single(row => row.Id == "park").Hidden);
+    }
+
+    [Fact]
+    public void SyncHideIsSeparateFromDeclineAndDelete()
+    {
+        var book = new SyncBook("Diabolos");
+        book.ForceShare();
+        var item = new SyncAnnouncement
+        {
+            Id = "park",
+            World = "Diabolos",
+            Channel = 11,
+            Text = "Maps at 8:00pm ward 13",
+            FromSync = true,
+        };
+        book.Events.Add(item);
+        Assert.True(item.IsSyncPending);
+        Assert.True(book.HideRemote(item.Id));
+        Assert.True(item.Hidden);
+        Assert.False(item.Declined);
+        Assert.False(item.IsSyncPending);
+        Assert.True(book.HideRemote(item.Id, false));
+        Assert.False(item.Hidden);
+        Assert.True(item.IsSyncPending);
+        Assert.True(book.DeclineRemote(item.Id));
+        Assert.True(item.Declined);
+        Assert.False(item.Hidden);
+        item.Declined = false;
+        Assert.True(book.Dismiss(item.Id));
+        Assert.DoesNotContain(book.Events, row => row.Id == "park");
+        Assert.NotEmpty(book.DismissedKeys);
+    }
+
+    [Fact]
     public void DeletePastRemovesEndedEventsAndKeepsLaterAndRepeatingOnes()
     {
         var session = new CalendarSession(new DateOnly(2026, 9, 27));

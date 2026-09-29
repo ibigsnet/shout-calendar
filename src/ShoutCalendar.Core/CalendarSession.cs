@@ -77,13 +77,16 @@ public sealed class CalendarSession
 
     public Vector4 AcceptedColor { get; set; } = new(0.12f, 0.48f, 0.24f, 0.95f);
 
-    public Vector4 TodayColor { get; set; } = new(0.183f, 0.183f, 0.183f, 1f);
+    public Vector4 TodayColor { get; set; } = new(1f, 1f, 1f, 0.19f);
+
+    /// <summary>Days from the previous or next month shown to fill the week.</summary>
+    public Vector4 OutsideColor { get; set; } = new(0.22f, 0.22f, 0.24f, 0.427f);
 
     public Vector4 CrystalColor { get; set; } = new(0.18f, 0.52f, 0.86f, 0.95f);
 
     public Vector4 CactusColor { get; set; } = new(0.55f, 0.78f, 0.22f, 0.95f);
 
-    public Vector4 EventColor { get; set; } = new(0f, 0f, 1f, 0.64f);
+    public Vector4 EventColor { get; set; } = new(0.144f, 0f, 1f, 0.64f);
 
     public int AlarmMinutesBefore { get; set; } = 15;
 
@@ -100,9 +103,26 @@ public sealed class CalendarSession
 
     public bool ShowSyncUnaccepted { get; set; } = true;
 
+    /// <summary>When set, parked local and shared invites are drawn again.</summary>
+    public bool ShowHidden { get; set; }
+
+    /// <summary>Pending list shows the newest invite first. Default keeps newest at the bottom.</summary>
+    public bool NewestFirst { get; set; }
+
+    /// <summary>Share of the week view given to the event panel under the days. 0.28 matches the built-in split.</summary>
+    public float WeekDetailShare { get; set; } = 0.28f;
+
+    /// <summary>When set, pending invites that name another world stay on the list and on the calendar.</summary>
+    public bool ShowAllServers { get; set; }
+
+    /// <summary>World the client is standing on.</summary>
+    public string CurrentWorld { get; set; } = "";
+
     public bool ShowResets { get; set; } = true;
 
-    public Vector4 SyncPendingColor { get; set; } = new(0.45f, 0.28f, 0.72f, 0.95f);
+    public Vector4 SyncPendingColor { get; set; } = new(0.63f, 0.28f, 0.72f, 0.95f);
+
+    public Vector4 SharedBarColor { get; set; } = new(0.95f, 0.05f, 0.05f, 1f);
 
     public Vector4 TwitchColor { get; set; } = new(0.569f, 0.275f, 1f, 0.95f);
 

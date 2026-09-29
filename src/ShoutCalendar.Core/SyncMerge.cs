@@ -48,6 +48,7 @@ public static class SyncMerge
             incoming.Id = current.Id;
         incoming.Accepted = current.Accepted || incoming.Accepted;
         incoming.Declined = current.Declined;
+        incoming.Hidden = current.Hidden;
         if (current.Declined)
             incoming.Accepted = false;
         incoming.ContentKey = SyncMerge.Key(incoming);
@@ -70,13 +71,14 @@ public static class SyncMerge
 public sealed class SyncBuffer
 {
     private readonly List<Held> waiting = new();
+    private readonly HashSet<string> released = new(StringComparer.Ordinal);
 
     public IReadOnlyList<SyncAnnouncement> Push(DateTimeOffset now, int holdOffSeconds, IEnumerable<SyncAnnouncement> incoming)
     {
         foreach (var item in incoming)
         {
             var key = SyncMerge.Key(item);
-            if (this.waiting.Any(row => SyncMerge.Key(row.Item) == key))
+            if (this.released.Contains(key) || this.waiting.Any(row => SyncMerge.Key(row.Item) == key))
                 continue;
             this.waiting.Add(new Held(now, item));
         }
@@ -87,10 +89,18 @@ public sealed class SyncBuffer
         {
             if (now - row.Seen < hold)
                 return false;
+            this.released.Add(SyncMerge.Key(row.Item));
             ready.Add(row.Item);
             return true;
         });
         return ready;
+    }
+
+    /// <summary>Forget held and released keys so a debug re-sync can pull the same shouts again.</summary>
+    public void Reset()
+    {
+        this.waiting.Clear();
+        this.released.Clear();
     }
 
     private readonly record struct Held(DateTimeOffset Seen, SyncAnnouncement Item);

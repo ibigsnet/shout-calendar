@@ -79,6 +79,28 @@ public class ScheduleTests
     }
 
     [Fact]
+    public void LaneSlotsReserveMaxLaneNotSpanCount()
+    {
+        var items = new (string Key, DateOnly Start, DateOnly End)[]
+        {
+            ("a", new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 3)),
+            ("b", new DateOnly(2026, 9, 2), new DateOnly(2026, 9, 2)),
+            ("c", new DateOnly(2026, 9, 4), new DateOnly(2026, 9, 5)),
+        };
+        var lanes = GameSchedule.Lanes(items);
+        Assert.Equal(0, lanes["a"]);
+        Assert.Equal(1, lanes["b"]);
+        Assert.Equal(0, lanes["c"]);
+
+        var slots = GameSchedule.LaneSlotsByDay(lanes, items);
+        Assert.Equal(1, slots[new DateOnly(2026, 9, 1)]);
+        Assert.Equal(2, slots[new DateOnly(2026, 9, 2)]);
+        Assert.Equal(1, slots[new DateOnly(2026, 9, 3)]);
+        Assert.Equal(1, slots[new DateOnly(2026, 9, 4)]);
+        Assert.False(slots.ContainsKey(new DateOnly(2026, 9, 6)));
+    }
+
+    [Fact]
     public void ParenthesesAndShoutClocksBothCountAsMapSpots()
     {
         var spots = MapMentions.Read("meet (12.4, 8.1) or x 3.0, y 4.5");

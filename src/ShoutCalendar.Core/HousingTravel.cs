@@ -30,6 +30,39 @@ public readonly record struct HousingSpot(string District, int? Ward, int? Plot,
         "Empyreum" => "Foundation",
         _ => this.District,
     };
+
+    /// <summary>Known city aetheryte row id for Teleport. Null when the district is unknown.</summary>
+    public uint? CityAetheryteId => this.District switch
+    {
+        "The Lavender Beds" => 2,   // New Gridania
+        "The Goblet" => 9,          // Ul'dah - Steps of Nald
+        "Mist" => 8,                // Limsa Lominsa Lower Decks
+        "Shirogane" => 111,         // Kugane
+        "Empyreum" => 70,           // Foundation
+        _ => null,
+    };
+
+    /// <summary>Ward territory. Every ward of a district shares this id.</summary>
+    public uint? WardTerritoryId => this.District switch
+    {
+        "The Lavender Beds" => 340,
+        "The Goblet" => 341,
+        "Mist" => 339,
+        "Shirogane" => 641,
+        "Empyreum" => 979,
+        _ => null,
+    };
+
+    /// <summary>City territory that holds the arrival aetheryte.</summary>
+    public uint? CityTerritoryId => this.District switch
+    {
+        "The Lavender Beds" => 132,
+        "The Goblet" => 130,
+        "Mist" => 129,
+        "Shirogane" => 628,
+        "Empyreum" => 418,
+        _ => null,
+    };
 }
 
 public static class HousingTravel
@@ -99,7 +132,9 @@ public static class HousingTravel
         }
 
         string? world = null;
-        if (PlayableWorlds.TryNamedWorld(server, out var named))
+        if (ServerNames.TryAdvertised(blob, out var advertised))
+            world = advertised;
+        else if (PlayableWorlds.TryNamedWorld(server, out var named))
             world = named;
         else
         {

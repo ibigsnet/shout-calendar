@@ -1,10 +1,12 @@
 # Shout Calendar
 
-Dalamud plugin that watches FFXIV chat for event invites and keeps them on a month calendar until you accept them. Shout Calendar on its own does not send anything to other players. Shout Calendar Sync is a separate plugin.
+Standalone Dalamud plugin that watches FFXIV chat for event invites and keeps them on a month calendar until you accept them. Shout Calendar works without Sync and does not send anything to other players. [Shout Calendar Sync](https://github.com/ibigsnet/shout-calendar-sync) is an optional companion for sharing public Shout and Yell invites; it requires this plugin.
 
 The installer name is Shout Calendar. The window title is FFXIV Shout Calendar. The author is RifleJock.
 
 License: GPL-3.0-or-later. See [LICENSE](LICENSE).
+
+The plugin icon was created with AI assistance using editable vector paths. Its PNG and SVG source are in `images/`.
 
 ## Install from Dalamud
 

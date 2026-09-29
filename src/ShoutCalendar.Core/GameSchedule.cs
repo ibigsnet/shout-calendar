@@ -251,9 +251,8 @@ public static class GameSchedule
         var last = 0;
         for (var index = 0; index < month.Cells.Count; index++)
         {
-            if (month.Cells[index].Day is not int day)
+            if (month.Cells[index].Date is not DateOnly date)
                 continue;
-            var date = new DateOnly(month.Year, month.Month, day);
             if (date < start || date > end)
                 continue;
             var column = index % 7;
@@ -288,27 +287,54 @@ public static class GameSchedule
         return new SpanSegment(0, from.DayNumber - weekStart.DayNumber, to.DayNumber - weekStart.DayNumber);
     }
 
-    public static IReadOnlyDictionary<string, int> Lanes(IReadOnlyList<ScheduleOccurrence> items)
+    public static IReadOnlyDictionary<string, int> Lanes(IReadOnlyList<ScheduleOccurrence> items) =>
+        Lanes(items.Select(item => (item.Key, item.StartDate, item.EndDate)));
+
+    public static IReadOnlyDictionary<string, int> Lanes(IEnumerable<(string Key, DateOnly Start, DateOnly End)> items)
     {
         var lanes = new Dictionary<string, int>();
         var ends = new List<DateOnly>();
-        foreach (var item in items.OrderBy(item => item.StartDate).ThenBy(item => item.EndDate).ThenBy(item => item.Key))
+        foreach (var item in items.OrderBy(item => item.Start).ThenBy(item => item.End).ThenBy(item => item.Key))
         {
-            var lane = ends.FindIndex(end => end < item.StartDate);
+            var lane = ends.FindIndex(end => end < item.Start);
             if (lane < 0)
             {
                 lane = ends.Count;
-                ends.Add(item.EndDate);
+                ends.Add(item.End);
             }
             else
             {
-                ends[lane] = item.EndDate;
+                ends[lane] = item.End;
             }
 
             lanes[item.Key] = lane;
         }
 
         return lanes;
+    }
+
+    /// <summary>
+    /// Per-day row count to reserve under the day number so painted span lanes line up with single-day chips.
+    /// Uses max(lane)+1 for spans covering that day, not the raw span count.
+    /// </summary>
+    public static IReadOnlyDictionary<DateOnly, int> LaneSlotsByDay(
+        IReadOnlyDictionary<string, int> lanes,
+        IEnumerable<(string Key, DateOnly Start, DateOnly End)> items)
+    {
+        var slots = new Dictionary<DateOnly, int>();
+        foreach (var item in items)
+        {
+            if (!lanes.TryGetValue(item.Key, out var lane))
+                continue;
+            var need = lane + 1;
+            for (var day = item.Start; day <= item.End; day = day.AddDays(1))
+            {
+                if (!slots.TryGetValue(day, out var have) || need > have)
+                    slots[day] = need;
+            }
+        }
+
+        return slots;
     }
 
     private static ScheduleOccurrence? Campaign(

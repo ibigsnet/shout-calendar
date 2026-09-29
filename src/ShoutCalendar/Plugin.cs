@@ -14,7 +14,11 @@ using Dalamud.Plugin.Ipc.Exceptions;
 using Dalamud.Interface.ImGuiFileDialog;
 using Dalamud.Plugin.Services;
 using Dalamud.Utility;
+using Dalamud.Game.ClientState.Conditions;
+using FFXIVClientStructs.FFXIV.Client.Game;
+using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.UI;
+using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using Lumina.Excel.Sheets;
 using ShoutCalendar.Core;
 
@@ -28,10 +32,12 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
     [PluginService] internal static IDataManager DataManager { get; private set; } = null!;
     [PluginService] internal static IClientState ClientState { get; private set; } = null!;
+    [PluginService] internal static IObjectTable Objects { get; private set; } = null!;
     [PluginService] internal static IFramework Framework { get; private set; } = null!;
     [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
     [PluginService] internal static IPlayerState PlayerState { get; private set; } = null!;
     [PluginService] internal static IAetheryteList AetheryteList { get; private set; } = null!;
+    [PluginService] internal static ICondition Condition { get; private set; } = null!;
 
     private readonly PluginConfig config;
     private readonly CalendarSession session;
@@ -62,7 +68,7 @@ public sealed class Plugin : IDalamudPlugin
             throw new InvalidOperationException("XivChatType.Shout does not match the documented shout channel byte.");
 
         this.config = PluginInterface.GetPluginConfig() as PluginConfig ?? new PluginConfig();
-        this.session = new CalendarSession(DateOnly.FromDateTime(DateTime.UtcNow))
+        this.session = new CalendarSession(DateOnly.FromDateTime(DateTime.Now))
         {
             Zone = TimeZoneInfo.Local,
         };
@@ -99,9 +105,10 @@ public sealed class Plugin : IDalamudPlugin
         this.session.PendingColor = Shown(this.config.PendingColor, new Vector4(0.93f, 0.62f, 0.12f, 0.95f));
         this.session.AcceptedColor = Shown(this.config.AcceptedColor, new Vector4(0.12f, 0.48f, 0.24f, 0.95f));
         this.session.TodayColor = Shown(this.config.TodayColor, new Vector4(1f, 1f, 1f, 0.19f));
+        this.session.OutsideColor = Shown(this.config.OutsideColor, new Vector4(0.22f, 0.22f, 0.24f, 0.427f));
         this.session.CrystalColor = Shown(this.config.CrystalColor, new Vector4(0.18f, 0.52f, 0.86f, 0.95f));
         this.session.CactusColor = Shown(this.config.CactusColor, new Vector4(0.55f, 0.78f, 0.22f, 0.95f));
-        this.session.EventColor = Shown(this.config.EventColor, new Vector4(0f, 0f, 1f, 0.64f));
+        this.session.EventColor = Shown(this.config.EventColor, new Vector4(0.144f, 0f, 1f, 0.64f));
         this.session.AlarmMinutesBefore = this.config.AlarmMinutesBefore < 0 ? 0 : this.config.AlarmMinutesBefore;
         this.session.AlarmAtStart = this.config.AlarmAtStart;
         this.session.ShowLocal = this.config.ShowLocal ?? true;
@@ -109,8 +116,15 @@ public sealed class Plugin : IDalamudPlugin
         this.session.ShowLocalUnaccepted = this.config.ShowLocalUnaccepted ?? this.config.ShowLocal ?? true;
         this.session.ShowSyncAccepted = this.config.ShowSyncAccepted ?? true;
         this.session.ShowSyncUnaccepted = this.config.ShowSyncUnaccepted ?? true;
+        this.session.ShowHidden = this.config.ShowHidden ?? false;
+        this.session.NewestFirst = this.config.NewestFirst;
+        this.session.WeekDetailShare = this.config.WeekDetailShare is > 0.08f and < 0.85f
+            ? this.config.WeekDetailShare
+            : 0.28f;
+        this.session.ShowAllServers = this.config.ShowAllServers;
         this.session.ShowResets = this.config.ShowResets ?? true;
-        this.session.SyncPendingColor = Shown(this.config.SyncPendingColor, new Vector4(0.45f, 0.28f, 0.72f, 0.95f));
+        this.session.SyncPendingColor = Shown(this.config.SyncPendingColor, new Vector4(0.63f, 0.28f, 0.72f, 0.95f));
+        this.session.SharedBarColor = Shown(this.config.SharedBarColor, new Vector4(0.95f, 0.05f, 0.05f, 1f));
         this.session.TwitchColor = Shown(this.config.TwitchColor, new Vector4(0.569f, 0.275f, 1f, 0.95f));
         this.session.DiscordColor = Shown(this.config.DiscordColor, new Vector4(0.345f, 0.396f, 0.949f, 0.95f));
         this.session.UseResets(this.config.EnabledResets);
@@ -133,7 +147,7 @@ public sealed class Plugin : IDalamudPlugin
         if (repaired > 0 || this.session.Log.ExpireUnaccepted(DateTimeOffset.UtcNow, this.session.UnacceptedHoldDays) > 0)
             this.Save();
 
-        this.window = new CalendarWindow(this.session, this.clearPrompt, this.Save, this.PlayAlarm, this.dialogs, this.OpenPin, this.OpenHousing);
+        this.window = new CalendarWindow(this.session, this.clearPrompt, this.Save, this.PlayAlarm, this.dialogs, this.OpenPin, this.OpenHousing, this.RequestSyncNow, this.OpenUserMacros, this.RequestSyncResync);
         this.windowSystem = new WindowSystem("ShoutCalendar");
         this.windowSystem.AddWindow(this.window);
 
@@ -210,6 +224,9 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnFramework(IFramework framework)
     {
+        var standing = this.DetectedWorld("");
+        if (standing.Length > 0)
+            this.session.CurrentWorld = standing;
         if (this.syncBook is not null)
             this.syncBook.Worlds.Notice(this.DetectedWorld(this.syncBook.Worlds.Here));
         var now = DateTime.Now;
@@ -297,7 +314,7 @@ public sealed class Plugin : IDalamudPlugin
 
         if (this.syncBook is SyncBook book)
         {
-            foreach (var item in book.Events)
+            foreach (var item in book.CopyEvents())
             {
                 if (!item.Accepted || string.IsNullOrEmpty(item.Id))
                     continue;
@@ -351,63 +368,561 @@ public sealed class Plugin : IDalamudPlugin
             ChatGui.Print($"Shout Calendar: could not play that file. Using <se.{EventAlarm.ClampSound(sound)}>.");
     }
 
-    private void OpenPin(string place, float x, float y, bool hasMap, string? quest)
+    private void OpenPin(string place, float x, float y, bool hasMap, string? quest, string? world)
     {
         if (hasMap)
-            this.OpenMap(place, x, y);
+            this.OpenMap(place, x, y, world);
         if (!string.IsNullOrWhiteSpace(quest))
             this.PrintQuest(quest);
     }
 
+    private readonly record struct AetherytePin(uint AetheryteId, uint TerritoryId, uint MapId, float X, float Y, string Name);
+
+    private void RequestSyncNow()
+    {
+        try
+        {
+            PluginInterface.GetIpcSubscriber<bool>("ShoutCalendar.Sync.RequestNow").InvokeFunc();
+        }
+        catch (IpcError)
+        {
+            ChatGui.Print("Shout Calendar: Sync is not loaded.");
+        }
+        catch (Exception exception)
+        {
+            Log.Warning(exception, "Sync now failed.");
+            ChatGui.Print("Shout Calendar: Sync now failed.");
+        }
+    }
+
+    private void RequestSyncResync()
+    {
+        try
+        {
+            PluginInterface.GetIpcSubscriber<bool>("ShoutCalendar.Sync.RequestResync").InvokeFunc();
+        }
+        catch (IpcError)
+        {
+            ChatGui.Print("Shout Calendar: Sync is not loaded.");
+        }
+        catch (Exception exception)
+        {
+            Log.Warning(exception, "Re-sync from relay failed.");
+            ChatGui.Print("Shout Calendar: Re-sync from relay failed.");
+        }
+    }
+
+    private unsafe void OpenUserMacros()
+    {
+        try
+        {
+            var agent = AgentModule.Instance()->GetAgentByInternalId(AgentId.Macro);
+            if (agent is null)
+            {
+                ChatGui.Print("Shout Calendar: open User Macros from the system menu (or Alt+R).");
+                return;
+            }
+
+            agent->Show();
+        }
+        catch (Exception exception)
+        {
+            Log.Warning(exception, "Could not open User Macros.");
+            ChatGui.Print("Shout Calendar: open User Macros from the system menu (or Alt+R).");
+        }
+    }
+
     private void OpenHousing(HousingSpot spot)
     {
-        if (!this.TryAetheryte(spot.City, out var x, out var y))
+        unsafe
+        {
+            var telepo = Telepo.Instance();
+            if (telepo is not null)
+                telepo->UpdateAetheryteList();
+        }
+
+        AetherytePin pin;
+        if (spot.CityAetheryteId is uint cityId && this.TryAetheryteById(cityId, spot.City, out pin))
+        {
+            // City aetheryte from the known housing map.
+        }
+        else if (!this.TryAetheryteByName(spot.City, out pin))
         {
             ChatGui.Print($"Shout Calendar: {spot.Label}. Teleport from the {spot.City} aetheryte.");
             return;
         }
 
-        this.OpenMap(spot.City, x, y);
+        if (!this.TryFlagPlot(spot))
+            this.OpenMapPin(pin);
+
+        if (this.WrongWorld(spot.World, out var needed, out var current))
+        {
+            ChatGui.Print("Shout Calendar: " + DataCenters.TravelLine(needed, current));
+            return;
+        }
+
+        var wardStep = spot.Ward is int ward
+            ? $" Select {spot.District} ward {ward.ToString(CultureInfo.InvariantCulture)} from the residential menu."
+            : "";
+        if (this.AlreadyAtHousing(spot, pin))
+        {
+            ChatGui.Print($"Shout Calendar: you are already closer than {pin.Name}. The flag is set.{wardStep}");
+            return;
+        }
+
+        if (wardStep.Length > 0)
+            ChatGui.Print($"Shout Calendar: teleporting to {pin.Name}.{wardStep}");
+        this.TryTeleport(pin);
     }
 
-    private bool TryAetheryte(string place, out float x, out float y)
+    private bool WrongWorld(string? world, out string needed, out string current)
     {
-        x = 0f;
-        y = 0f;
-        var sheet = DataManager.GetExcelSheet<Aetheryte>();
+        needed = "";
+        current = "";
+        if (string.IsNullOrWhiteSpace(world) || !PlayableWorlds.TryCanonical(world, out needed))
+            return false;
+        var here = this.DetectedWorld("");
+        if (here.Length == 0 || !PlayableWorlds.TryCanonical(here, out current))
+            return false;
+        return !current.Equals(needed, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool AlreadyAtHousing(HousingSpot spot, AetherytePin pin)
+    {
+        if (!this.TryPlayerMap(out var territory, out var playerX, out var playerY))
+            return false;
+        if (spot.WardTerritoryId is uint ward && territory == ward)
+            return true;
+        if (territory != pin.TerritoryId)
+            return false;
+        return TravelNear.Distance(playerX, playerY, pin.X, pin.Y) <= TravelNear.Leeway;
+    }
+
+    private bool TryFlagPlot(HousingSpot spot)
+    {
+        if (spot.Plot is not int plot || plot is < 1 or > 60 || spot.WardTerritoryId is not uint territoryId)
+            return false;
+        var sheet = DataManager.GetSubrowExcelSheet<HousingMapMarkerInfo>();
         if (sheet is null)
             return false;
-        var wanted = place.Replace('’', '\'').Replace('‘', '\'');
-        foreach (var row in sheet)
+        var parent = sheet.GetRowOrDefault(territoryId);
+        if (parent is null)
+            return false;
+        foreach (var marker in parent)
         {
-            try
-            {
-                if (row.PlaceName.RowId == 0)
-                    continue;
-                var name = row.PlaceName.Value.Name.ExtractText().Replace('’', '\'').Replace('‘', '\'');
-                if (!name.Equals(wanted, StringComparison.OrdinalIgnoreCase))
-                    continue;
-                var levelRef = row.Level.FirstOrDefault();
-                if (levelRef.RowId == 0)
-                    continue;
-                var level = levelRef.Value;
-                if (level.Map.RowId == 0)
-                    continue;
-                var map = level.Map.Value;
-                x = MapUtil.ConvertWorldCoordXZToMapCoord(level.X, map.SizeFactor, map.OffsetX);
-                y = MapUtil.ConvertWorldCoordXZToMapCoord(level.Z, map.SizeFactor, map.OffsetY);
-                return x > 0f && y > 0f;
-            }
-            catch (InvalidOperationException)
-            {
+            if (marker.SubrowId != plot - 1 || !marker.Map.IsValid)
                 continue;
-            }
+            var map = marker.Map.Value;
+            var x = MapUtil.ConvertWorldCoordXZToMapCoord(marker.X, map.SizeFactor, map.OffsetX);
+            var y = MapUtil.ConvertWorldCoordXZToMapCoord(marker.Z, map.SizeFactor, map.OffsetY);
+            return this.OpenMapAt(territoryId, marker.Map.RowId, x, y);
         }
 
         return false;
     }
 
-    private void OpenMap(string place, float x, float y)
+    private bool TryPlayerMap(out uint territoryId, out float x, out float y)
+    {
+        territoryId = ClientState.TerritoryType;
+        x = 0f;
+        y = 0f;
+        var player = Objects.LocalPlayer;
+        if (player is null || territoryId == 0)
+            return false;
+        if (!DataManager.GetExcelSheet<TerritoryType>().TryGetRow(territoryId, out var territory) || !territory.Map.IsValid)
+            return false;
+        var map = territory.Map.Value;
+        x = MapUtil.ConvertWorldCoordXZToMapCoord(player.Position.X, map.SizeFactor, map.OffsetX);
+        y = MapUtil.ConvertWorldCoordXZToMapCoord(player.Position.Z, map.SizeFactor, map.OffsetY);
+        return true;
+    }
+
+    private bool TryClosestAetheryte(uint territoryId, float x, float y, out AetherytePin pin)
+    {
+        pin = default;
+        var sheet = DataManager.GetExcelSheet<Aetheryte>();
+        if (sheet is null)
+            return false;
+        AetherytePin? bestUnlocked = null;
+        var bestUnlockedDistance = float.PositiveInfinity;
+        AetherytePin? bestAny = null;
+        var bestAnyDistance = float.PositiveInfinity;
+        foreach (var row in sheet)
+        {
+            if (!row.IsAetheryte || row.Territory.RowId != territoryId)
+                continue;
+            var candidate = this.BuildPin(row, "");
+            if (candidate.X <= 0f || candidate.Y <= 0f)
+                continue;
+            var distance = TravelNear.Distance(candidate.X, candidate.Y, x, y);
+            if (distance < bestAnyDistance)
+            {
+                bestAnyDistance = distance;
+                bestAny = candidate;
+            }
+
+            if (this.IsUnlocked(candidate.AetheryteId) && distance < bestUnlockedDistance)
+            {
+                bestUnlockedDistance = distance;
+                bestUnlocked = candidate;
+            }
+        }
+
+        if (bestUnlocked is AetherytePin unlocked)
+        {
+            pin = unlocked;
+            return true;
+        }
+
+        if (bestAny is AetherytePin any)
+        {
+            pin = any;
+            return true;
+        }
+
+        return false;
+    }
+
+    private bool TryTerritoryForPlace(string place, out uint territoryId)
+    {
+        territoryId = 0;
+        var wanted = NormalizePlace(place);
+        if (wanted.Length == 0)
+            return false;
+        var sheet = DataManager.GetExcelSheet<TerritoryType>();
+        if (sheet is null)
+            return false;
+        uint fallback = 0;
+        foreach (var row in sheet)
+        {
+            if (row.PlaceName.RowId == 0)
+                continue;
+            string name;
+            try
+            {
+                name = NormalizePlace(row.PlaceName.Value.Name.ExtractText());
+            }
+            catch (InvalidOperationException)
+            {
+                continue;
+            }
+
+            if (!name.Equals(wanted, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (fallback == 0)
+                fallback = row.RowId;
+            if (this.TerritoryHasAetheryte(row.RowId))
+            {
+                territoryId = row.RowId;
+                return true;
+            }
+        }
+
+        territoryId = fallback;
+        return territoryId != 0;
+    }
+
+    private bool TerritoryHasAetheryte(uint territoryId)
+    {
+        var sheet = DataManager.GetExcelSheet<Aetheryte>();
+        if (sheet is null)
+            return false;
+        foreach (var row in sheet)
+        {
+            if (row.IsAetheryte && row.Territory.RowId == territoryId)
+                return true;
+        }
+
+        return false;
+    }
+
+    private bool TryAetheryteById(uint aetheryteId, string fallbackName, out AetherytePin pin)
+    {
+        pin = default;
+        var sheet = DataManager.GetExcelSheet<Aetheryte>();
+        if (sheet is null || !sheet.TryGetRow(aetheryteId, out var row) || !row.IsAetheryte)
+        {
+            pin = new AetherytePin(aetheryteId, 0, 0, 0f, 0f, fallbackName);
+            return aetheryteId != 0;
+        }
+
+        pin = this.BuildPin(row, fallbackName);
+        return true;
+    }
+
+    private bool TryAetheryteByName(string place, out AetherytePin pin)
+    {
+        pin = default;
+        var sheet = DataManager.GetExcelSheet<Aetheryte>();
+        if (sheet is null)
+            return false;
+        var wanted = NormalizePlace(place);
+        if (wanted.Length == 0)
+            return false;
+
+        AetherytePin? unlocked = null;
+        AetherytePin? any = null;
+        foreach (var row in sheet)
+        {
+            if (!row.IsAetheryte || row.PlaceName.RowId == 0 || row.Territory.RowId == 0)
+                continue;
+            if (!this.TryPlaceNames(row, out var name, out var territoryName))
+                continue;
+            if (!PlaceMatches(wanted, name) && !PlaceMatches(wanted, territoryName))
+                continue;
+
+            var candidate = this.BuildPin(row, name.Length > 0 ? name : wanted);
+            if (this.IsUnlocked(candidate.AetheryteId))
+            {
+                unlocked = candidate;
+                break;
+            }
+
+            any ??= candidate;
+        }
+
+        if (unlocked is AetherytePin foundUnlocked)
+        {
+            pin = foundUnlocked;
+            return true;
+        }
+
+        if (any is AetherytePin foundAny)
+        {
+            pin = foundAny;
+            return true;
+        }
+
+        return false;
+    }
+
+    private AetherytePin BuildPin(Aetheryte row, string fallbackName)
+    {
+        var name = fallbackName;
+        uint territoryId = row.Territory.RowId;
+        uint mapId = 0;
+        float x = 0f;
+        float y = 0f;
+
+        try
+        {
+            if (row.PlaceName.RowId != 0)
+            {
+                var extracted = NormalizePlace(row.PlaceName.Value.Name.ExtractText());
+                if (extracted.Length > 0)
+                    name = extracted;
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            // Keep fallbackName.
+        }
+
+        try
+        {
+            if (row.Territory.RowId != 0)
+            {
+                var territory = row.Territory.Value;
+                territoryId = row.Territory.RowId;
+                if (territory.Map.RowId != 0)
+                    mapId = territory.Map.RowId;
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            // Territory / map may be missing for some rows.
+        }
+
+        try
+        {
+            foreach (var levelRef in row.Level)
+            {
+                if (!levelRef.IsValid)
+                    continue;
+                var level = levelRef.Value;
+                if (!level.Map.IsValid)
+                    continue;
+                var map = level.Map.Value;
+                mapId = level.Map.RowId;
+                x = MapUtil.ConvertWorldCoordXZToMapCoord(level.X, map.SizeFactor, map.OffsetX);
+                y = MapUtil.ConvertWorldCoordXZToMapCoord(level.Z, map.SizeFactor, map.OffsetY);
+                break;
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            // Level rows on this sheet do not resolve.
+        }
+
+        if (x <= 0f || y <= 0f)
+        {
+            if (this.TryAetheryteMarker(row.RowId, out var markerX, out var markerY))
+            {
+                ushort scale = 100;
+                try
+                {
+                    if (row.Map.IsValid && row.Map.Value.SizeFactor != 0)
+                        scale = row.Map.Value.SizeFactor;
+                }
+                catch (InvalidOperationException)
+                {
+                    scale = 100;
+                }
+
+                x = MarkerToMap(markerX, scale);
+                y = MarkerToMap(markerY, scale);
+            }
+        }
+
+        if (mapId == 0)
+        {
+            try
+            {
+                if (row.Map.RowId != 0)
+                    mapId = row.Map.RowId;
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
+
+        return new AetherytePin(row.RowId, territoryId, mapId, x, y, name);
+    }
+
+    private bool TryPlaceNames(Aetheryte row, out string name, out string territoryName)
+    {
+        name = "";
+        territoryName = "";
+        try
+        {
+            name = NormalizePlace(row.PlaceName.Value.Name.ExtractText());
+            if (row.Territory.RowId != 0)
+            {
+                var territory = row.Territory.Value;
+                if (territory.PlaceName.RowId != 0)
+                    territoryName = NormalizePlace(territory.PlaceName.Value.Name.ExtractText());
+            }
+
+            return name.Length > 0 || territoryName.Length > 0;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    private bool IsUnlocked(uint aetheryteId)
+    {
+        for (var i = 0; i < AetheryteList.Length; i++)
+        {
+            var entry = AetheryteList[i];
+            if (entry is not null && entry.AetheryteId == aetheryteId)
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool PlaceMatches(string wanted, string candidate)
+    {
+        if (candidate.Length == 0)
+            return false;
+        if (candidate.Equals(wanted, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (wanted.Contains(candidate, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return candidate.Contains(wanted, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizePlace(string? place) =>
+        (place ?? "").Replace('’', '\'').Replace('‘', '\'').Replace('ʼ', '\'').Trim();
+
+    private readonly Dictionary<uint, (short X, short Y)> aetheryteMarkers = new();
+    private bool aetheryteMarkersReady;
+
+    /// <summary>
+    /// Aetheryte.Level does not resolve. The crystal's map position is the marker whose data key is the aetheryte id.
+    /// </summary>
+    private bool TryAetheryteMarker(uint aetheryteId, out short x, out short y)
+    {
+        x = 0;
+        y = 0;
+        this.EnsureAetheryteMarkers();
+        if (!this.aetheryteMarkers.TryGetValue(aetheryteId, out var marker))
+            return false;
+        x = marker.X;
+        y = marker.Y;
+        return true;
+    }
+
+    private void EnsureAetheryteMarkers()
+    {
+        if (this.aetheryteMarkersReady)
+            return;
+        this.aetheryteMarkersReady = true;
+        var sheet = DataManager.GetSubrowExcelSheet<MapMarker>();
+        if (sheet is null)
+            return;
+        foreach (var parent in sheet)
+        {
+            foreach (var marker in parent)
+            {
+                if (marker.DataType != 3 || marker.Icon != 60453 || marker.DataKey.RowId == 0)
+                    continue;
+                this.aetheryteMarkers.TryAdd(marker.DataKey.RowId, (marker.X, marker.Y));
+            }
+        }
+    }
+
+    private static float MarkerToMap(short marker, ushort sizeFactor)
+    {
+        var scale = sizeFactor == 0 ? 100f : sizeFactor;
+        return marker / scale * 2f + 1f;
+    }
+
+    private void OpenMapPin(AetherytePin pin)
+    {
+        // Sit the flag just off the crystal so the aetheryte marker stays visible.
+        const float nudgeX = 0.1f;
+        const float nudgeY = -0.1f;
+        var x = pin.X + nudgeX;
+        var y = pin.Y + nudgeY;
+        SeString? link = null;
+        if (pin.X > 0f && pin.Y > 0f && pin.TerritoryId != 0 && pin.MapId != 0)
+            link = SeString.CreateMapLink(pin.TerritoryId, pin.MapId, x, y);
+        if (link is null && pin.X > 0f && pin.Y > 0f)
+            link = SeString.CreateMapLink(pin.Name, x, y);
+        if (link is null)
+        {
+            ChatGui.Print($"Shout Calendar: could not find a map for {pin.Name}.");
+            return;
+        }
+
+        this.ShowMapLink(link);
+    }
+
+    private bool OpenMapAt(uint territoryId, uint mapId, float x, float y)
+    {
+        if (territoryId == 0 || mapId == 0 || x <= 0f || y <= 0f)
+            return false;
+        var link = SeString.CreateMapLink(territoryId, mapId, x, y);
+        this.ShowMapLink(link);
+        return true;
+    }
+
+    private void ShowMapLink(SeString link)
+    {
+        var payload = link.Payloads.OfType<MapLinkPayload>().FirstOrDefault();
+        if (payload is not null)
+        {
+            GameGui.OpenMapWithMapLink(payload);
+            ImGui.SetClipboardText(payload.CoordinateString);
+        }
+
+        ChatGui.Print(link);
+    }
+
+    private void OpenMap(string place, float x, float y, string? world)
     {
         SeString? link = null;
         if (!string.IsNullOrWhiteSpace(place))
@@ -424,14 +939,108 @@ public sealed class Plugin : IDalamudPlugin
             return;
         }
 
-        var payload = link.Payloads.OfType<MapLinkPayload>().FirstOrDefault();
-        if (payload is not null)
+        this.ShowMapLink(link);
+        if (this.WrongWorld(world, out var needed, out var current))
         {
-            GameGui.OpenMapWithMapLink(payload);
-            ImGui.SetClipboardText(payload.CoordinateString);
+            ChatGui.Print("Shout Calendar: " + DataCenters.TravelLine(needed, current).Replace("that plot", "that spot", StringComparison.Ordinal));
+            return;
         }
 
-        ChatGui.Print(link);
+        if (!this.TryTerritoryForPlace(place, out var territoryId) || !this.TryClosestAetheryte(territoryId, x, y, out var pin))
+            return;
+        if (this.TryPlayerMap(out var here, out var playerX, out var playerY)
+            && TravelNear.Skip(
+                here == territoryId,
+                TravelNear.Distance(playerX, playerY, x, y),
+                TravelNear.Distance(pin.X, pin.Y, x, y)))
+        {
+            ChatGui.Print($"Shout Calendar: you are already closer than {pin.Name}. The flag is set.");
+            return;
+        }
+
+        this.TryTeleport(pin);
+    }
+
+    private unsafe void TryTeleport(AetherytePin pin)
+    {
+        if (Condition[ConditionFlag.InCombat]
+            || Condition[ConditionFlag.BetweenAreas]
+            || Condition[ConditionFlag.BetweenAreas51]
+            || Condition[ConditionFlag.Casting]
+            || Condition[ConditionFlag.OccupiedInEvent]
+            || Condition[ConditionFlag.OccupiedInQuestEvent]
+            || Condition[ConditionFlag.OccupiedInCutSceneEvent])
+        {
+            ChatGui.Print("Shout Calendar: map flag set. Finish what you are doing, then teleport.");
+            return;
+        }
+
+        if (Condition[ConditionFlag.InThatPosition])
+        {
+            ChatGui.Print("Shout Calendar: map flag set. Stand up, then try again.");
+            return;
+        }
+
+        var telepo = Telepo.Instance();
+        if (telepo is null)
+        {
+            ChatGui.Print("Shout Calendar: map flag set. Could not reach Teleport.");
+            return;
+        }
+
+        telepo->UpdateAetheryteList();
+
+        var action = ActionManager.Instance();
+        if (action is not null && action->GetActionStatus(ActionType.Action, 5) != 0)
+        {
+            ChatGui.Print("Shout Calendar: map flag set. Teleport is not ready yet — stand up or leave the current action, then try again.");
+            return;
+        }
+
+        byte subIndex = 0;
+        var unlocked = false;
+        for (var i = 0; i < AetheryteList.Length; i++)
+        {
+            var entry = AetheryteList[i];
+            if (entry is null || entry.AetheryteId != pin.AetheryteId)
+                continue;
+            // Prefer the main crystal (subIndex 0) over estate/apartment shares of the same id.
+            if (!unlocked || entry.SubIndex == 0)
+            {
+                subIndex = (byte)entry.SubIndex;
+                unlocked = true;
+                if (entry.SubIndex == 0)
+                    break;
+            }
+        }
+
+        if (!unlocked)
+        {
+            ChatGui.Print($"Shout Calendar: {pin.Name} is not on your Teleport list. The map flag is set.");
+            return;
+        }
+
+        var aetheryteId = pin.AetheryteId;
+        var chosenSub = subIndex;
+        Framework.RunOnTick(() =>
+        {
+            if (Condition[ConditionFlag.InThatPosition])
+            {
+                ChatGui.Print("Shout Calendar: map flag set. Stand up, then try again.");
+                return;
+            }
+
+            var live = Telepo.Instance();
+            if (live is null)
+            {
+                ChatGui.Print("Shout Calendar: map flag set. Open Teleport if the cast did not start.");
+                return;
+            }
+
+            live->UpdateAetheryteList();
+            if (!live->Teleport(aetheryteId, chosenSub))
+                ChatGui.Print("Shout Calendar: map flag set. Open Teleport if the cast did not start.");
+        });
     }
 
     private void PrintQuest(string name)
@@ -563,6 +1172,7 @@ public sealed class Plugin : IDalamudPlugin
         this.config.PendingColor = this.session.PendingColor;
         this.config.AcceptedColor = this.session.AcceptedColor;
         this.config.TodayColor = this.session.TodayColor;
+        this.config.OutsideColor = this.session.OutsideColor;
         this.config.CrystalColor = this.session.CrystalColor;
         this.config.CactusColor = this.session.CactusColor;
         this.config.EventColor = this.session.EventColor;
@@ -573,8 +1183,13 @@ public sealed class Plugin : IDalamudPlugin
         this.config.ShowLocalUnaccepted = this.session.ShowLocalUnaccepted;
         this.config.ShowSyncAccepted = this.session.ShowSyncAccepted;
         this.config.ShowSyncUnaccepted = this.session.ShowSyncUnaccepted;
+        this.config.ShowHidden = this.session.ShowHidden;
+        this.config.NewestFirst = this.session.NewestFirst;
+        this.config.WeekDetailShare = this.session.WeekDetailShare;
+        this.config.ShowAllServers = this.session.ShowAllServers;
         this.config.ShowResets = this.session.ShowResets;
         this.config.SyncPendingColor = this.session.SyncPendingColor;
+        this.config.SharedBarColor = this.session.SharedBarColor;
         this.config.TwitchColor = this.session.TwitchColor;
         this.config.DiscordColor = this.session.DiscordColor;
         this.config.EnabledResets = this.session.Resets.Order().ToList();
@@ -797,7 +1412,9 @@ public sealed class Plugin : IDalamudPlugin
             return RelayProtocol.Denied;
         var rows = RelayCodec.DecodeList(System.Text.Encoding.UTF8.GetBytes(json ?? ""));
         var added = this.syncBook.Ingest(signature, rows, openConnections, this.session.Places);
-        return added < 0 ? RelayProtocol.Denied : RelayProtocol.Stored;
+        if (added < 0)
+            return RelayProtocol.Denied;
+        return added.ToString(CultureInfo.InvariantCulture);
     }
 
     private string OnSyncRead(byte[] signature)

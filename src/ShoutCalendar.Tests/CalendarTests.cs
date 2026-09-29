@@ -43,6 +43,29 @@ public class CalendarTests
         Assert.Equal(30, dayCells[^1].Day);
         Assert.Equal((int)new DateOnly(2026, 9, 1).DayOfWeek, month.Cells.TakeWhile(cell => cell.Day is null).Count());
         Assert.Equal(0, month.Cells.Count % 7);
+        Assert.Equal(new DateOnly(2026, 10, 1), month.Cells.First(cell => cell.Day is null && cell.Date?.Month == 10).Date);
+        Assert.Equal(new DateOnly(2026, 10, 3), month.Cells[^1].Date);
+    }
+
+    [Fact]
+    public void NeighborDaysCarryTheirEvents()
+    {
+        var october = new CalendarEntry(
+            new DateOnly(2026, 10, 1),
+            new TimeOnly(20, 0),
+            null,
+            21,
+            "Rafflesia",
+            "The Goblet",
+            "8pm Goblet W21 P4",
+            "",
+            false,
+            "oct",
+            default);
+        var month = CalendarMonth.Create(2026, 9, [october]);
+        var cell = month.Cells.Single(item => item.Date == new DateOnly(2026, 10, 1));
+        Assert.Null(cell.Day);
+        Assert.Contains(october, cell.Entries);
     }
 
     [Fact]

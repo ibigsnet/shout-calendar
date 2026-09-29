@@ -9,7 +9,7 @@ public sealed class SyncLimits
 
     public int MaxStoredBytes { get; set; } = 32_000_000;
 
-    public int MaxItemsPerTick { get; set; } = 32;
+    public int MaxItemsPerTick { get; set; } = 64;
 
     public int MaxMemoryBytes { get; set; } = 64_000_000;
 

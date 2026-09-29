@@ -23,11 +23,11 @@ public static class SyncLoop
             return 0;
         }
 
-        var local = book.Events.Where(item => item.HarvestedLocally).Select(item => (item.Id, item.Text)).ToArray();
+        var local = book.CopyEvents().Where(item => item.HarvestedLocally).Select(item => (item.Id, item.Text)).ToArray();
         var added = book.Ingest(proof, incoming, openConnections: 1);
         foreach (var (id, text) in local)
         {
-            var kept = book.Events.FirstOrDefault(item => item.Id == id && item.HarvestedLocally);
+            var kept = book.CopyEvents().FirstOrDefault(item => item.Id == id && item.HarvestedLocally);
             if (kept is null || kept.Text != text)
                 throw new InvalidOperationException("A background sync changed a local event.");
         }

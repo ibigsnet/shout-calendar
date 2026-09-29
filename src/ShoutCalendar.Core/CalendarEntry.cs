@@ -23,4 +23,5 @@ public sealed record CalendarEntry(
     bool NoteUpdated = false,
     bool Manual = false,
     string SpeakerWorld = "",
-    Vector4? Color = null);
+    Vector4? Color = null,
+    bool Hidden = false);

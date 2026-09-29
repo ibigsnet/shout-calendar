@@ -2,7 +2,7 @@ using System.Globalization;
 
 namespace ShoutCalendar.Core;
 
-public sealed record MonthCell(int? Day, IReadOnlyList<CalendarEntry> Entries);
+public sealed record MonthCell(int? Day, IReadOnlyList<CalendarEntry> Entries, DateOnly? Date = null);
 
 /// <summary>One month of the calendar grid. Paging returns another month over the same entries.</summary>
 public sealed class CalendarMonth
@@ -30,54 +30,42 @@ public sealed class CalendarMonth
         if (month is < 1 or > 12)
             throw new ArgumentOutOfRangeException(nameof(month));
 
-        var byDay = new Dictionary<int, List<CalendarEntry>>();
-        foreach (var entry in entries)
-        {
-            if (entry.Repeat is null)
-            {
-                if (entry.Date is not DateOnly date || date.Year != year || date.Month != month)
-                    continue;
-                Add(byDay, date.Day, entry);
-                continue;
-            }
-
-            if (entry.Date is null)
-                continue;
-            var daysInMonth = DateTime.DaysInMonth(year, month);
-            for (var dayNumber = 1; dayNumber <= daysInMonth; dayNumber++)
-            {
-                if (EventRepeat.FallsOn(entry, new DateOnly(year, month, dayNumber)))
-                    Add(byDay, dayNumber, entry);
-            }
-        }
-
-        void Add(Dictionary<int, List<CalendarEntry>> days, int dayNumber, CalendarEntry item)
-        {
-            if (!days.TryGetValue(dayNumber, out var list))
-            {
-                list = new List<CalendarEntry>();
-                days[dayNumber] = list;
-            }
-
-            list.Add(item);
-        }
-
         var first = new DateOnly(year, month, 1);
         var lead = (int)first.DayOfWeek;
         var days = DateTime.DaysInMonth(year, month);
-        var cells = new List<MonthCell>(lead + days + 6);
-        for (var i = 0; i < lead; i++)
-            cells.Add(new MonthCell(null, Array.Empty<CalendarEntry>()));
-        for (var day = 1; day <= days; day++)
+        var count = lead + days;
+        while (count % 7 != 0)
+            count++;
+        var gridStart = first.AddDays(-lead);
+
+        var byDate = new Dictionary<DateOnly, List<CalendarEntry>>();
+        for (var index = 0; index < count; index++)
         {
-            IReadOnlyList<CalendarEntry> onDay = byDay.TryGetValue(day, out var list)
-                ? list
-                : Array.Empty<CalendarEntry>();
-            cells.Add(new MonthCell(day, onDay));
+            var day = gridStart.AddDays(index);
+            foreach (var entry in entries)
+            {
+                if (!Covers(entry, day))
+                    continue;
+                if (!byDate.TryGetValue(day, out var list))
+                {
+                    list = new List<CalendarEntry>();
+                    byDate[day] = list;
+                }
+
+                list.Add(entry);
+            }
         }
 
-        while (cells.Count % 7 != 0)
-            cells.Add(new MonthCell(null, Array.Empty<CalendarEntry>()));
+        var cells = new List<MonthCell>(count);
+        for (var index = 0; index < count; index++)
+        {
+            var date = gridStart.AddDays(index);
+            var inMonth = date.Year == year && date.Month == month;
+            IReadOnlyList<CalendarEntry> onDay = byDate.TryGetValue(date, out var list)
+                ? list
+                : Array.Empty<CalendarEntry>();
+            cells.Add(new MonthCell(inMonth ? date.Day : null, onDay, date));
+        }
 
         return new CalendarMonth(year, month, entries, cells);
     }
@@ -100,5 +88,21 @@ public sealed class CalendarMonth
         }
 
         return Array.Empty<CalendarEntry>();
+    }
+
+    private static bool Covers(CalendarEntry entry, DateOnly day)
+    {
+        if (entry.Date is not DateOnly start)
+            return false;
+        if (entry.Repeat is not null)
+        {
+            if (EventRepeat.FallsOn(entry, day))
+                return true;
+            return Overnight.Is(entry.Time, entry.End) && EventRepeat.FallsOn(entry, day.AddDays(-1));
+        }
+
+        if (start == day)
+            return true;
+        return Overnight.Is(entry.Time, entry.End) && start.AddDays(1) == day;
     }
 }
