@@ -290,7 +290,16 @@ public sealed class CalendarSession
 
     public CalendarEntry? KeepShout(string? text, int channel, DateTimeOffset shoutTimestamp, string? sender = null, string? speakerWorld = null)
     {
-        var combined = this.burst.Push(sender, channel, shoutTimestamp, text, out var replaceId);
+        var alone = ShoutHarvest.TryHarvest(
+            text,
+            channel,
+            shoutTimestamp,
+            this.Places,
+            this.Channels,
+            this.HousingHint,
+            this.AggressiveFilter,
+            this.Zone);
+        var combined = this.burst.Push(sender, channel, shoutTimestamp, text, alone is null, out var replaceId);
         var detected = ShoutHarvest.TryHarvest(
             combined,
             channel,

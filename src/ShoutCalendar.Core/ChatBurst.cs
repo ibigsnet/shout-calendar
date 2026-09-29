@@ -1,45 +1,90 @@
 namespace ShoutCalendar.Core;
 
-/// <summary>Joins a few lines from one player on one channel so a split invite can be read whole.</summary>
+/// <summary>
+/// Joins a few lines from one player so a split invite can be read whole.
+/// Another player's chat does not discard an open join.
+/// A later line that is already an invite on its own stays a separate entry.
+/// </summary>
 public sealed class ChatBurst
 {
     public const int WindowSeconds = 60;
 
     public const int MaxLines = 4;
 
-    private readonly List<string> lines = new();
-    private string sender = "";
-    private int channel;
-    private DateTimeOffset lastAt;
-    private string? keptId;
+    private readonly Dictionary<string, Open> open = new(StringComparer.OrdinalIgnoreCase);
 
-    public string Push(string? sender, int channel, DateTimeOffset when, string? text, out string? replaceId)
+    private string lastWho = "";
+
+    public string Push(string? sender, int channel, DateTimeOffset when, string? text, bool attachToKept, out string? replaceId)
     {
         var who = SenderName.Clean(sender);
         var line = Collapse(text);
-        var continues = this.lines.Count > 0
-            && who.Length > 0
-            && string.Equals(this.sender, who, StringComparison.OrdinalIgnoreCase)
-            && Similar(this.channel, channel)
-            && when >= this.lastAt
-            && when - this.lastAt <= TimeSpan.FromSeconds(WindowSeconds)
-            && this.lines.Count < MaxLines;
-        if (!continues)
+        this.Expire(when);
+        if (who.Length == 0)
         {
-            this.lines.Clear();
-            this.keptId = null;
-            this.sender = who;
-            this.channel = channel;
+            replaceId = null;
+            return line;
+        }
+
+        var continues = this.open.TryGetValue(who, out var existing)
+            && Similar(existing.Channel, channel)
+            && when >= existing.LastAt
+            && when - existing.LastAt <= TimeSpan.FromSeconds(WindowSeconds)
+            && existing.Lines.Count < MaxLines
+            && (attachToKept || existing.KeptId is null);
+        Open burst;
+        if (!continues || existing is null)
+        {
+            burst = new Open { Channel = channel };
+            this.open[who] = burst;
+        }
+        else
+        {
+            burst = existing;
         }
 
         if (line.Length > 0)
-            this.lines.Add(line);
-        this.lastAt = when;
-        replaceId = continues ? this.keptId : null;
-        return string.Join(' ', this.lines);
+            burst.Lines.Add(line);
+        burst.LastAt = when;
+        this.lastWho = who;
+        replaceId = continues ? burst.KeptId : null;
+        return string.Join(' ', burst.Lines);
     }
 
-    public void Remember(string? id) => this.keptId = id;
+    public void Remember(string? id)
+    {
+        if (this.lastWho.Length == 0 || !this.open.TryGetValue(this.lastWho, out var burst))
+            return;
+        burst.KeptId = id;
+    }
+
+    private void Expire(DateTimeOffset when)
+    {
+        if (this.open.Count == 0)
+            return;
+        List<string>? drop = null;
+        foreach (var pair in this.open)
+        {
+            if (when - pair.Value.LastAt > TimeSpan.FromSeconds(WindowSeconds))
+                (drop ??= new List<string>()).Add(pair.Key);
+        }
+
+        if (drop is null)
+            return;
+        foreach (var key in drop)
+            this.open.Remove(key);
+    }
+
+    private sealed class Open
+    {
+        public List<string> Lines { get; } = new();
+
+        public int Channel { get; set; }
+
+        public DateTimeOffset LastAt { get; set; }
+
+        public string? KeptId { get; set; }
+    }
 
     private static bool Similar(int left, int right)
     {

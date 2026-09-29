@@ -1111,6 +1111,54 @@ public class HarvestTests
     }
 
     [Fact]
+    public void TwoLinesStayOneInviteWhenSomeoneElseSpeaksBetweenThem()
+    {
+        var eastern = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+        var session = new CalendarSession(new DateOnly(2026, 9, 29)) { Zone = eastern };
+        const string title = "\uE071\uE082\uE073\uE071\uE07E\uE071";
+        var first = $"The ritual has begun. Gather at {title} tonight.";
+        var second = "Open: 7 PM EST | Zalera Goblet W4 P43 \uE091\uE08F guests | discord.gg/exampleclub";
+        var when = new DateTimeOffset(2026, 9, 29, 23, 43, 21, TimeSpan.Zero);
+        Assert.False(session.TryAddShout(first, ShoutHarvest.ShoutChannel, when, "Mina Willow"));
+        Assert.False(session.TryAddShout("Anyone up for cards?", ShoutHarvest.ShoutChannel, when.AddSeconds(1), "Rowan Hale"));
+        Assert.True(session.TryAddShout(second, ShoutHarvest.ShoutChannel, when.AddSeconds(3), "Mina Willow"));
+
+        var entry = Assert.Single(session.Log.Entries);
+        Assert.Contains(title, entry.EventText, StringComparison.Ordinal);
+        Assert.Contains("ritual", entry.EventText, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("exampleclub", entry.EventText, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Rowan", entry.EventText, StringComparison.Ordinal);
+        Assert.DoesNotContain("cards", entry.EventText, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(new TimeOnly(19, 0), entry.Time);
+        Assert.Equal(4, entry.Ward);
+        Assert.Contains("plot 43", entry.Place, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("The Goblet", entry.Place, StringComparison.Ordinal);
+        Assert.Contains("Zalera", entry.Server, StringComparison.Ordinal);
+        Assert.Equal("Mina Willow", entry.Sender);
+    }
+
+    [Fact]
+    public void ALineAfterTheJoinWindowStaysSeparate()
+    {
+        var eastern = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+        var session = new CalendarSession(new DateOnly(2026, 9, 29)) { Zone = eastern };
+        var when = new DateTimeOffset(2026, 9, 29, 23, 43, 21, TimeSpan.Zero);
+        Assert.False(session.TryAddShout(
+            "The ritual has begun tonight.",
+            ShoutHarvest.ShoutChannel,
+            when,
+            "Mina Willow"));
+        Assert.True(session.TryAddShout(
+            "Open: 7 PM EST at Goblet W4 P43.",
+            ShoutHarvest.ShoutChannel,
+            when.AddSeconds(ChatBurst.WindowSeconds + 1),
+            "Mina Willow"));
+        var entry = Assert.Single(session.Log.Entries);
+        Assert.DoesNotContain("ritual", entry.EventText, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(4, entry.Ward);
+    }
+
+    [Fact]
     public void UntilADateWithoutAVenueIsNotAnInvite()
     {
         var when = new DateTimeOffset(2026, 9, 29, 4, 0, 0, TimeSpan.Zero);
