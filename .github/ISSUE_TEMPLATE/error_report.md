@@ -1,7 +1,7 @@
 ---
 name: Error report
 about: Report a problem in Shout Calendar
-title: "Error report: "
+title: "Error report"
 ---
 
 ### What happened
@@ -17,4 +17,4 @@ title: "Error report: "
 
 Shout Calendar
 
-Leave out character names, Discord invites, and log lines that name other players.
+<!-- Leave out character names, Discord invites, and log lines that name other players. -->

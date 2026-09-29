@@ -45,9 +45,23 @@ public static class ZoneClock
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     /// <summary>"Now-12a ET" is the heard minute through that later clock. The zone labels the end only.</summary>
+    public static bool TryTyped(string? text, out TimeOnly start, out TimeOnly? end)
+    {
+        start = default;
+        end = null;
+        var walls = Walls(text);
+        if (walls.Count == 0)
+            return false;
+        start = walls[0].Time;
+        if (walls.Count > 1)
+            end = walls[1].Time;
+        return true;
+    }
+
     public static bool TryNowUntil(string? text, out Wall end)
     {
         end = default;
+        text = IconText.Plain(text);
         if (string.IsNullOrWhiteSpace(text))
             return false;
         var lead = NowUntilRegex.Match(text);
@@ -71,6 +85,7 @@ public static class ZoneClock
     public static IReadOnlyList<Wall> Walls(string? text)
     {
         var found = new List<(int Index, int End, Wall Wall)>();
+        text = IconText.Plain(text);
         if (string.IsNullOrWhiteSpace(text))
             return [];
         var covered = new List<(int Start, int End)>();

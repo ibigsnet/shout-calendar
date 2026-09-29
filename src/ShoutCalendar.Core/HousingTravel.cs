@@ -107,7 +107,7 @@ public static class HousingTravel
 
     public static HousingSpot? Find(string? place, string? text, int? ward, string? server)
     {
-        var blob = $"{place} {text}";
+        var blob = IconText.Plain($"{place} {text}");
         string? district = null;
         foreach (var (token, name) in Districts)
         {

@@ -23,7 +23,7 @@ public static class NoteLayout
                     continue;
                 if (bit.Length < 90)
                 {
-                    lines.Add(bit);
+                    AddSection(lines, bit);
                     continue;
                 }
 
@@ -31,11 +31,48 @@ public static class NoteLayout
                 {
                     var line = sentence.Trim();
                     if (line.Length > 0)
-                        lines.Add(line);
+                        AddSection(lines, line);
                 }
             }
         }
 
         return lines;
+    }
+
+    private static void AddSection(List<string> lines, string bit)
+    {
+        var links = LinkFinder.Find(bit);
+        if (links.Count == 0)
+        {
+            lines.Add(bit);
+            return;
+        }
+
+        var rest = bit;
+        foreach (var link in links)
+        {
+            rest = Cut(rest, link.Url);
+            rest = Cut(rest, "http://" + link.Label);
+            rest = Cut(rest, link.Label);
+        }
+
+        rest = Collapse(rest).Trim(' ', '|', '/', '-', '•', ',', ';');
+        if (rest.Length > 0)
+            lines.Add(rest);
+        foreach (var link in links)
+            lines.Add(link.Label);
+    }
+
+    private static string Cut(string text, string token)
+    {
+        if (token.Length == 0)
+            return text;
+        return text.Replace(token, " ", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string Collapse(string text)
+    {
+        var parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return string.Join(' ', parts);
     }
 }

@@ -32,12 +32,12 @@ public static class EventIdentity
             && !world.Trim().Equals(otherWorld.Trim(), StringComparison.OrdinalIgnoreCase))
             return false;
 
-        var leftWard = Number(WardRegex, text);
-        var rightWard = Number(WardRegex, otherText);
+        var leftWard = Number(WardRegex, IconText.Plain(text));
+        var rightWard = Number(WardRegex, IconText.Plain(otherText));
         if (leftWard is null || rightWard is null || leftWard != rightWard)
             return false;
-        var leftPlot = Number(PlotRegex, text);
-        var rightPlot = Number(PlotRegex, otherText);
+        var leftPlot = Number(PlotRegex, IconText.Plain(text));
+        var rightPlot = Number(PlotRegex, IconText.Plain(otherText));
         if (leftPlot is null || rightPlot is null || leftPlot != rightPlot)
             return false;
         return Overlap(text, otherText);

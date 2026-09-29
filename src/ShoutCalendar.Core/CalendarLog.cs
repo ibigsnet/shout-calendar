@@ -11,6 +11,11 @@ public sealed class CalendarLog
 
     public IReadOnlyList<CalendarEntry> Entries => this.entries;
 
+    /// <summary>Changes when an invite is added, edited, or removed.</summary>
+    public int Revision { get; private set; }
+
+    private void Touch() => this.Revision++;
+
     public bool Add(CalendarEntry? entry)
     {
         if (entry is null)
@@ -29,12 +34,14 @@ public sealed class CalendarLog
                 Manual = current.Manual,
                 DetectedAt = current.DetectedAt == default ? entry.DetectedAt : current.DetectedAt,
             });
+            this.Touch();
             return true;
         }
 
         if (string.IsNullOrEmpty(entry.Id))
             entry = entry with { Id = Guid.NewGuid().ToString("N"), Accepted = false };
         this.entries.Add(Stamp(entry));
+        this.Touch();
         return true;
     }
 
@@ -65,6 +72,8 @@ public sealed class CalendarLog
             changed++;
         }
 
+        if (changed > 0)
+            this.Touch();
         return changed;
     }
 
@@ -81,6 +90,7 @@ public sealed class CalendarLog
             Sender = string.IsNullOrWhiteSpace(incoming.Sender) ? current.Sender : incoming.Sender,
             NoteUpdated = current.NoteUpdated,
         });
+        this.Touch();
         return true;
     }
 
@@ -98,11 +108,19 @@ public sealed class CalendarLog
         else if (string.IsNullOrWhiteSpace(dateText))
             date = parsed?.Date;
 
-        TimeOnly? time = parsed?.Time;
-        if (TimeOnly.TryParseExact(timeText.Trim(), "HH:mm", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var typedTime))
-            time = typedTime;
-        else if (string.IsNullOrWhiteSpace(timeText))
-            time = parsed?.Time;
+        TimeOnly? time = current.Time;
+        TimeOnly? end = current.End;
+        var typedClock = timeText.Trim();
+        if (typedClock.Length == 0)
+        {
+            time = parsed?.Time ?? current.Time;
+            end = parsed?.End ?? current.End;
+        }
+        else if (ZoneClock.TryTyped(typedClock, out var start, out var typedEnd))
+        {
+            time = start;
+            end = typedEnd;
+        }
 
         var place = string.IsNullOrWhiteSpace(placeText) ? parsed?.Place ?? "" : placeText.Trim();
         var text = string.IsNullOrWhiteSpace(note) ? current.EventText : note.Trim();
@@ -111,12 +129,13 @@ public sealed class CalendarLog
             EventText = text,
             Date = date,
             Time = time,
-            End = string.IsNullOrWhiteSpace(timeText) ? parsed?.End : null,
+            End = end,
             Place = place,
             Ward = parsed?.Ward ?? current.Ward,
             Server = parsed?.Server ?? current.Server,
             NoteUpdated = current.NoteUpdated || !string.Equals(text, current.EventText, StringComparison.Ordinal),
         };
+        this.Touch();
         return true;
     }
 
@@ -126,6 +145,7 @@ public sealed class CalendarLog
         if (index < 0)
             return false;
         this.entries[index] = this.entries[index] with { Color = color };
+        this.Touch();
         return true;
     }
 
@@ -135,6 +155,7 @@ public sealed class CalendarLog
         if (index < 0)
             return false;
         this.entries.RemoveAt(index);
+        this.Touch();
         return true;
     }
 
@@ -144,6 +165,7 @@ public sealed class CalendarLog
         if (index < 0 || this.entries[index].Accepted)
             return false;
         this.entries[index] = this.entries[index] with { Accepted = true, Hidden = false };
+        this.Touch();
         return true;
     }
 
@@ -153,6 +175,7 @@ public sealed class CalendarLog
         if (index < 0 || this.entries[index].Hidden == hidden)
             return false;
         this.entries[index] = this.entries[index] with { Hidden = hidden };
+        this.Touch();
         return true;
     }
 
@@ -168,6 +191,8 @@ public sealed class CalendarLog
             count++;
         }
 
+        if (count > 0)
+            this.Touch();
         return count;
     }
 
@@ -182,6 +207,8 @@ public sealed class CalendarLog
             count++;
         }
 
+        if (count > 0)
+            this.Touch();
         return count;
     }
 
@@ -190,20 +217,43 @@ public sealed class CalendarLog
         if (holdDays < 1)
             holdDays = 1;
         var cutoff = now - TimeSpan.FromDays(holdDays);
-        return this.entries.RemoveAll(entry => !entry.Accepted && entry.DetectedAt < cutoff);
+        var removed = this.entries.RemoveAll(entry => !entry.Accepted && entry.DetectedAt < cutoff);
+        if (removed > 0)
+            this.Touch();
+        return removed;
     }
 
     public void Clear()
     {
+        if (this.entries.Count == 0)
+            return;
         this.entries.Clear();
+        this.Touch();
     }
 
-    public int ClearAccepted() => this.entries.RemoveAll(entry => entry.Accepted);
+    public int ClearAccepted()
+    {
+        var removed = this.entries.RemoveAll(entry => entry.Accepted);
+        if (removed > 0)
+            this.Touch();
+        return removed;
+    }
 
-    public int ClearUnaccepted() => this.entries.RemoveAll(entry => !entry.Accepted);
+    public int ClearUnaccepted()
+    {
+        var removed = this.entries.RemoveAll(entry => !entry.Accepted);
+        if (removed > 0)
+            this.Touch();
+        return removed;
+    }
 
-    public int ClearPast(DateTime now, TimeZoneInfo? zone = null) =>
-        this.entries.RemoveAll(entry => PastEvents.Ended(entry, now, zone));
+    public int ClearPast(DateTime now, TimeZoneInfo? zone = null)
+    {
+        var removed = this.entries.RemoveAll(entry => PastEvents.Ended(entry, now, zone));
+        if (removed > 0)
+            this.Touch();
+        return removed;
+    }
 
     private static CalendarEntry Stamp(CalendarEntry entry)
     {
@@ -221,5 +271,7 @@ public sealed class CalendarLog
             : entry;
         this.entries.Add(Stamp(stored));
         }
+
+        this.Touch();
     }
 }

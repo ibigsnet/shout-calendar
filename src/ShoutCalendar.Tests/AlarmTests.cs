@@ -60,6 +60,18 @@ public class AlarmTests
         Assert.Single(EventAlarm.Due([AcceptedAt(start)], start, EventAlarm.MinuteOf(start).AddMinutes(-1), true, false, 0));
         Assert.True(EventAlarm.IsStartMinute(AcceptedAt(start), start));
         Assert.Contains("is starting", AlarmNotice.Line(AcceptedAt(start), 0), StringComparison.Ordinal);
+        var veil = AcceptedAt(start) with
+        {
+            Server = "Famfrit",
+            Place = "The Lavender Beds ward 25 plot 36",
+            Ward = 25,
+            EventText = "\uE084\uE078\uE075 \uE086\uE075\uE079\uE07C tonight",
+        };
+        var hop = AlarmNotice.Line(veil, 15, "Diabolos");
+        Assert.Contains("THE VEIL", hop, StringComparison.Ordinal);
+        Assert.Contains("Server hop to Famfrit (Primal) first", hop, StringComparison.Ordinal);
+        Assert.Contains("Visit Another Data Center", hop, StringComparison.Ordinal);
+        Assert.Contains("Teleport: New Gridania aetheryte", hop, StringComparison.Ordinal);
     }
 
     [Fact]

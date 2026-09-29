@@ -7,5 +7,5 @@
   "Tags": [
     "utility"
   ],
-  "Changelog": "The month fills the rest of the week, and those days use the Other month color. The open month follows today. Week height can be dragged. Pending can hide all, show every server, and list newest first. Shared invites sit under a colored bar. Hunt coordinates and shortened world names are kept. A housing click flags the plot and skips a teleport when you are already closer."
+  "Changelog": "Pending is a short list. Click a row for the message and actions. Show all servers follows the open calendars and the servers turned on in Sync. Show hidden starts off. Alarms name the event in plain letters, then say when to change servers and which aetheryte to use. Click From to draft a tell. Game clock icons and bare web addresses are read. A missing clock can be set by hand. Lighter calendar and a small macro guide are optional. The relay shows Degraded when it is falling behind."
 }

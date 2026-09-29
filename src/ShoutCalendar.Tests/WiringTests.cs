@@ -38,6 +38,9 @@ public class WiringTests
         Assert.Contains("Alarm unaccepted events", window, StringComparison.Ordinal);
         Assert.Contains("BeginTabItem(\"Resets\")", window, StringComparison.Ordinal);
         Assert.Contains("BeginTabItem(\"Settings\")", window, StringComparison.Ordinal);
+        Assert.Contains("Lighter calendar", window, StringComparison.Ordinal);
+        Assert.Contains("Performance log##sync-perf", window, StringComparison.Ordinal);
+        Assert.Contains("Off by default.", window, StringComparison.Ordinal);
         Assert.Contains("BeginTabItem(\"Colors\")", window, StringComparison.Ordinal);
         Assert.Contains("###day-folder", window, StringComparison.Ordinal);
         Assert.Contains("Local accepted", window, StringComparison.Ordinal);
@@ -50,7 +53,7 @@ public class WiringTests
         Assert.Contains("Alarm resets", window, StringComparison.Ordinal);
         Assert.Contains("Test accepted", window, StringComparison.Ordinal);
         Assert.Contains("Test unaccepted", window, StringComparison.Ordinal);
-        Assert.Contains("place name by itself is skipped", window, StringComparison.Ordinal);
+        Assert.Contains("it needs two of those three", window, StringComparison.Ordinal);
         Assert.Contains("ImGuiCol.ChildBg", window, StringComparison.Ordinal);
         var schedule = File.ReadAllText(Path.Combine(root, "src", "ShoutCalendar.Core", "GameSchedule.cs"));
         Assert.Contains("Jumbo Cactpot", schedule, StringComparison.Ordinal);
@@ -77,9 +80,18 @@ public class WiringTests
         Assert.Contains("Remember this choice##link-settings", window, StringComparison.Ordinal);
         Assert.Contains("Remember this choice##link-popup", window, StringComparison.Ordinal);
         Assert.Contains("Open this link in your browser?", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("BeginPopupModal(\"Make a macro", window, StringComparison.Ordinal);
+        Assert.Contains("new MacroHelperWindow", plugin, StringComparison.Ordinal);
+        Assert.Contains("this.window.IsOpen = false", plugin, StringComparison.Ordinal);
+        Assert.DoesNotContain("BeginPopupModal", File.ReadAllText(Path.Combine(root, "src", "ShoutCalendar", "MacroHelperWindow.cs")), StringComparison.Ordinal);
+        Assert.Contains("GitHubFeedback.ErrorPrompt", window, StringComparison.Ordinal);
+        Assert.Contains("new Vector2(-1f, 0f)", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("TextWrapped(this.pendingLink", window, StringComparison.Ordinal);
         Assert.Contains("Informedaholic: accept every shared invite", window, StringComparison.Ordinal);
-        Assert.Contains("Speed (Mb/s)", window, StringComparison.Ordinal);
-        Assert.DoesNotContain("Speed (MB/s)", window, StringComparison.Ordinal);
+        Assert.Contains("Download (Mb/s)", window, StringComparison.Ordinal);
+        Assert.Contains("Upload (Mb/s)", window, StringComparison.Ordinal);
+        Assert.Contains("upload starts at 1 Mb/s", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("Speed (Mb/s)", window, StringComparison.Ordinal);
         Assert.Contains("Country mirror", window, StringComparison.Ordinal);
         Assert.Contains("RelayReach.Online", window, StringComparison.Ordinal);
     }

@@ -100,6 +100,8 @@ public static class RelayProtocol
 
     public const string Online = "online";
 
+    public const string Degraded = "degraded";
+
     public const string Upgrade = "upgrade";
 
     /// <summary>Sent as X-Sync-Protocol. A newer relay answers upgrade.</summary>

@@ -127,6 +127,8 @@ public static class RelayReach
 
     public const string Online = "Online";
 
+    public const string Degraded = "Degraded";
+
     public const string Offline = "Offline";
 
     public const string OutOfDate = "Out of date";
@@ -135,7 +137,7 @@ public static class RelayReach
 
     public static string Prefer(string primary, bool mirror, bool primaryIsPublic, string publicStatus)
     {
-        if (primary == Online || primary == OutOfDate)
+        if (primary == Online || primary == Degraded || primary == OutOfDate)
             return primary;
         if (!mirror || primaryIsPublic)
             return primary;
@@ -149,7 +151,7 @@ public static class RelayReach
     public static string Read(string host, int port, bool mirror = false)
     {
         var primary = Probe(host, port);
-        if (primary == Online || primary == OutOfDate || !mirror || SyncRelays.IsPublic(host, port))
+        if (primary == Online || primary == Degraded || primary == OutOfDate || !mirror || SyncRelays.IsPublic(host, port))
             return primary;
         return Prefer(primary, true, false, Probe(SyncRelays.PublicHost, SyncRelays.PublicPort));
     }
@@ -185,6 +187,12 @@ public static class RelayReach
         return Describe(status);
     }
 
-    public static string Describe(string? status) =>
-        string.Equals(status, RelayProtocol.Upgrade, StringComparison.OrdinalIgnoreCase) ? OutOfDate : Online;
+    public static string Describe(string? status)
+    {
+        if (string.Equals(status, RelayProtocol.Upgrade, StringComparison.OrdinalIgnoreCase))
+            return OutOfDate;
+        if (string.Equals(status, RelayProtocol.Degraded, StringComparison.OrdinalIgnoreCase))
+            return Degraded;
+        return Online;
+    }
 }

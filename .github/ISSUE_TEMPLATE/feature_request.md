@@ -1,7 +1,7 @@
 ---
 name: Feature request
 about: Suggest a change to Shout Calendar
-title: "Feature request: "
+title: "Feature request"
 ---
 
 ### Idea

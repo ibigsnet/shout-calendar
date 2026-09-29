@@ -60,6 +60,8 @@ public static class ShoutHarvest
         if (!IsWatched(channel, channels) || string.IsNullOrWhiteSpace(text))
             return null;
 
+        var source = text.Trim();
+        text = IconText.Plain(source);
         var clocks = ReadClocks(text);
         var heardLocal = zone is null
             ? shoutTimestamp.ToLocalTime().DateTime
@@ -199,7 +201,7 @@ public static class ShoutHarvest
             ward,
             server,
             string.Join(", ", placeParts),
-            text.Trim(),
+            source,
             "",
             false,
             "",

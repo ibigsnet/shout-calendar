@@ -5,7 +5,11 @@ public sealed class SyncLimits
 {
     public int MaxConnections { get; set; } = 4;
 
+    /// <summary>Shared invites kept on one pass. Default is about 8 Mb/s.</summary>
     public int BytesPerSecond { get; set; } = 1_000_000;
+
+    /// <summary>Own shouts sent on one pass. Default is about 1 Mb/s.</summary>
+    public int UploadBytesPerSecond { get; set; } = 125_000;
 
     public int MaxStoredBytes { get; set; } = 32_000_000;
 
@@ -20,6 +24,7 @@ public sealed class SyncLimits
         {
             MaxConnections = AtLeastOne(this.MaxConnections),
             BytesPerSecond = AtLeastOne(this.BytesPerSecond),
+            UploadBytesPerSecond = AtLeastOne(this.UploadBytesPerSecond < 1 ? 125_000 : this.UploadBytesPerSecond),
             MaxStoredBytes = AtLeastOne(this.MaxStoredBytes),
             MaxItemsPerTick = AtLeastOne(this.MaxItemsPerTick),
             MaxMemoryBytes = AtLeastOne(this.MaxMemoryBytes),
@@ -64,5 +69,38 @@ public static class SyncBudget
         }
 
         return taken;
+    }
+
+    /// <summary>
+    /// Shouts to send on this pass. Already stored revisions are skipped and do not spend the upload budget.
+    /// One pass sends at most <see cref="SyncLimits.UploadBytesPerSecond"/>.
+    /// </summary>
+    public static IReadOnlyList<SyncAnnouncement> SelectUploads(
+        IEnumerable<SyncAnnouncement> outbound,
+        SyncLimits limits,
+        IReadOnlyDictionary<string, int>? alreadySent = null)
+    {
+        var left = limits.Clamp().UploadBytesPerSecond;
+        var seen = alreadySent is null
+            ? new Dictionary<string, int>(StringComparer.Ordinal)
+            : new Dictionary<string, int>(alreadySent, StringComparer.Ordinal);
+        var chosen = new List<SyncAnnouncement>();
+        foreach (var item in outbound)
+        {
+            if (item is null)
+                continue;
+            var key = SyncMerge.Key(item);
+            var revision = item.Revision < 1 ? 1 : item.Revision;
+            if (seen.TryGetValue(key, out var sent) && revision <= sent)
+                continue;
+            var size = Math.Max(1, item.PayloadBytes);
+            if (size > left)
+                continue;
+            chosen.Add(item);
+            seen[key] = revision;
+            left -= size;
+        }
+
+        return chosen;
     }
 }

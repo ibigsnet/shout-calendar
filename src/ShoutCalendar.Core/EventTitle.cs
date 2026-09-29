@@ -87,4 +87,24 @@ public static class EventTitle
         var corners = System.Text.RegularExpressions.Regex.Match(text, @"【\s*([^】\r\n]{2,40}?)\s*】");
         return corners.Success ? corners.Groups[1].Value.Trim() : "";
     }
+
+    /// <summary>Boxed alphabet letters become ordinary capitals. Other marks are dropped.</summary>
+    public static string Readable(string? title)
+    {
+        if (string.IsNullOrEmpty(title))
+            return "";
+        var chars = new char[title.Length];
+        var count = 0;
+        foreach (var ch in title)
+        {
+            if (ch is >= '\uE071' and <= '\uE08A')
+                chars[count++] = (char)('A' + (ch - '\uE071'));
+            else if (ch is '★' or '☆' or '△' or '□' or '【' or '】')
+                continue;
+            else
+                chars[count++] = ch;
+        }
+
+        return new string(chars, 0, count).Trim();
+    }
 }

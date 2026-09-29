@@ -5,9 +5,9 @@ namespace ShoutCalendar.Core;
 /// <summary>The chat line printed when an alarm rings.</summary>
 public static class AlarmNotice
 {
-    public static string Line(CalendarEntry entry, int minutesBefore)
+    public static string Line(CalendarEntry entry, int minutesBefore, string? here = null)
     {
-        var title = EventTitle.Choose(entry.EventText);
+        var title = EventTitle.Readable(EventTitle.Choose(entry.EventText));
         var name = title.Length > 0 ? title : "An event";
         var when = entry.Time?.ToString("HH:mm", CultureInfo.InvariantCulture) ?? "";
         var lead = minutesBefore > 0
@@ -18,16 +18,34 @@ public static class AlarmNotice
         if (entry.Date is DateOnly day)
             lead += " on " + day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
-        var details = new List<string> { "Shout Calendar: " + lead + "." };
-        if (!string.IsNullOrWhiteSpace(entry.Place))
-            details.Add(entry.Place.Trim());
-        else if (!string.IsNullOrWhiteSpace(entry.Server))
-            details.Add(entry.Server.Trim());
-        if (!string.IsNullOrWhiteSpace(entry.Sender))
-            details.Add(entry.Sender.Trim());
-        var note = (entry.EventText ?? "").Trim();
-        if (note.Length > 0 && !string.Equals(note, title, StringComparison.Ordinal))
-            details.Add(note.Length > 360 ? note[..360] : note);
-        return string.Join(" ", details);
+        var spot = HousingTravel.Find(entry.Place, entry.EventText, entry.Ward, entry.Server);
+        var needed = spot?.World ?? "";
+        if (needed.Length == 0 && PlayableWorlds.TryNamedWorld(entry.Server, out var named))
+            needed = named;
+
+        var parts = new List<string> { "Shout Calendar:" };
+        if (PlayableWorlds.TryCanonical(here, out var standing)
+            && needed.Length > 0
+            && !needed.Equals(standing, StringComparison.OrdinalIgnoreCase))
+            parts.Add(Hop(needed, standing));
+        if (spot is HousingSpot housing && housing.CityAetheryteId is not null)
+        {
+            var ward = housing.Ward is int number
+                ? $" Select {housing.District} ward {number.ToString(CultureInfo.InvariantCulture)}."
+                : "";
+            parts.Add($"Teleport: {housing.City} aetheryte.{ward}");
+        }
+
+        parts.Add(lead + ".");
+        return string.Join(" ", parts);
+    }
+
+    private static string Hop(string needed, string current)
+    {
+        if (DataCenters.SameCenter(needed, current) && DataCenters.TryGroup(needed, out var center))
+            return $"Server hop to {needed} first. You are on {current} ({center}). Visit Another World Server from Limsa Lominsa, Gridania, or Ul'dah.";
+        var from = DataCenters.TryGroup(current, out var here) ? $"{current} ({here})" : current;
+        var to = DataCenters.TryGroup(needed, out var there) ? $"{needed} ({there})" : needed;
+        return $"Server hop to {to} first. You are on {from}. Log out and choose Visit Another Data Center.";
     }
 }

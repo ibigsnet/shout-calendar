@@ -19,6 +19,7 @@ using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
+using FFXIVClientStructs.FFXIV.Component.GUI;
 using Lumina.Excel.Sheets;
 using ShoutCalendar.Core;
 
@@ -44,6 +45,8 @@ public sealed class Plugin : IDalamudPlugin
     private readonly ClearPrompt clearPrompt = new();
     private readonly WindowSystem windowSystem;
     private readonly CalendarWindow window;
+    private readonly MacroHelperWindow macroHelper;
+    private bool restoreCalendarAfterMacro;
     private readonly FileDialogManager dialogs = new();
     private readonly Dictionary<string, uint> questIds = new(StringComparer.OrdinalIgnoreCase);
     private bool questsScanned;
@@ -122,7 +125,9 @@ public sealed class Plugin : IDalamudPlugin
             ? this.config.WeekDetailShare
             : 0.28f;
         this.session.ShowAllServers = this.config.ShowAllServers;
+        this.session.PauseInPvp = this.config.PauseInPvp ?? true;
         this.session.ShowResets = this.config.ShowResets ?? true;
+        this.session.LightCalendar = this.config.LightCalendar;
         this.session.SyncPendingColor = Shown(this.config.SyncPendingColor, new Vector4(0.63f, 0.28f, 0.72f, 0.95f));
         this.session.SharedBarColor = Shown(this.config.SharedBarColor, new Vector4(0.95f, 0.05f, 0.05f, 1f));
         this.session.TwitchColor = Shown(this.config.TwitchColor, new Vector4(0.569f, 0.275f, 1f, 0.95f));
@@ -147,9 +152,11 @@ public sealed class Plugin : IDalamudPlugin
         if (repaired > 0 || this.session.Log.ExpireUnaccepted(DateTimeOffset.UtcNow, this.session.UnacceptedHoldDays) > 0)
             this.Save();
 
-        this.window = new CalendarWindow(this.session, this.clearPrompt, this.Save, this.PlayAlarm, this.dialogs, this.OpenPin, this.OpenHousing, this.RequestSyncNow, this.OpenUserMacros, this.RequestSyncResync);
+        this.window = new CalendarWindow(this.session, this.clearPrompt, this.Save, this.PlayAlarm, this.dialogs, this.OpenPin, this.OpenHousing, this.RequestSyncNow, this.ShowMacroHelper, this.RequestSyncResync);
+        this.macroHelper = new MacroHelperWindow(this.OpenUserMacros, this.RestoreCalendar);
         this.windowSystem = new WindowSystem("ShoutCalendar");
         this.windowSystem.AddWindow(this.window);
+        this.windowSystem.AddWindow(this.macroHelper);
 
         CommandManager.AddHandler(CalendarCommand.Open, new CommandInfo(this.OnCommand)
         {
@@ -222,8 +229,12 @@ public sealed class Plugin : IDalamudPlugin
         this.window.Toggle();
     }
 
+    private bool PausedForPvp() => this.session.PauseInPvp && ClientState.IsPvPExcludingDen;
+
     private void OnFramework(IFramework framework)
     {
+        if (this.PausedForPvp())
+            return;
         var standing = this.DetectedWorld("");
         if (standing.Length > 0)
             this.session.CurrentWorld = standing;
@@ -343,7 +354,7 @@ public sealed class Plugin : IDalamudPlugin
                 var lead = this.session.AlarmAtStart && EventAlarm.IsStartMinute(entry, now, TimeZoneInfo.Local)
                     ? 0
                     : this.session.AlarmMinutesBefore;
-                ChatGui.Print(AlarmNotice.Line(entry, lead));
+                ChatGui.Print(AlarmNotice.Line(entry, lead, this.session.CurrentWorld));
             }
         }
 
@@ -353,7 +364,7 @@ public sealed class Plugin : IDalamudPlugin
     private void Announce(CalendarEntry entry, bool accepted, int minutesBefore)
     {
         if (this.session.AlarmChat)
-            ChatGui.Print(AlarmNotice.Line(entry, minutesBefore));
+            ChatGui.Print(AlarmNotice.Line(entry, minutesBefore, this.session.CurrentWorld));
         this.PlayAlarm(
             accepted ? this.session.AcceptedSound : this.session.UnacceptedSound,
             accepted ? this.session.AcceptedSoundFile : this.session.UnacceptedSoundFile);
@@ -410,6 +421,26 @@ public sealed class Plugin : IDalamudPlugin
             Log.Warning(exception, "Re-sync from relay failed.");
             ChatGui.Print("Shout Calendar: Re-sync from relay failed.");
         }
+    }
+
+    private void ShowMacroHelper()
+    {
+        if (this.window.IsOpen)
+            this.restoreCalendarAfterMacro = true;
+        this.window.IsOpen = false;
+        if (this.macroHelper.IsOpen)
+            this.macroHelper.BringToFront();
+        else
+            this.macroHelper.IsOpen = true;
+        this.OpenUserMacros();
+    }
+
+    private void RestoreCalendar()
+    {
+        if (!this.restoreCalendarAfterMacro)
+            return;
+        this.restoreCalendarAfterMacro = false;
+        this.window.IsOpen = true;
     }
 
     private unsafe void OpenUserMacros()
@@ -1086,6 +1117,8 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnChat(IHandleableChatMessage message)
     {
+        if (this.PausedForPvp())
+            return;
         var when = ChatTime.FromUnixOrNow(message.Timestamp, DateTimeOffset.UtcNow);
 
         var text = message.Message.TextValue;
@@ -1097,6 +1130,65 @@ public sealed class Plugin : IDalamudPlugin
             return;
 
         this.Save();
+    }
+
+    internal static unsafe bool AskTell(string command)
+    {
+        if (string.IsNullOrWhiteSpace(command))
+            return false;
+        if (TryFillChat(command))
+        {
+            ChatGui.Print("Shout Calendar: the tell is in the chat box. Press Enter to send.");
+            return true;
+        }
+
+        ImGui.SetClipboardText(command);
+        ChatGui.Print("Shout Calendar: tell copied. Paste it into chat.");
+        return false;
+    }
+
+    private static unsafe bool TryFillChat(string command)
+    {
+        try
+        {
+            var addon = GameGui.GetAddonByName("ChatLog", 1);
+            if (addon.Address == nint.Zero)
+                return false;
+            var unit = (AtkUnitBase*)addon.Address;
+            var list = unit->UldManager.NodeList;
+            var count = unit->UldManager.NodeListCount;
+            AtkComponentTextInput* best = null;
+            var bestWidth = 0;
+            for (var i = 0; i < count; i++)
+            {
+                var node = list[i];
+                if (node == null)
+                    continue;
+                var componentNode = node->GetAsAtkComponentNode();
+                if (componentNode == null || componentNode->Component == null)
+                    continue;
+                if (componentNode->Component->GetComponentType() != ComponentType.TextInput)
+                    continue;
+                var input = (AtkComponentTextInput*)componentNode->Component;
+                var width = componentNode->AtkResNode.Width;
+                if (width < bestWidth)
+                    continue;
+                bestWidth = width;
+                best = input;
+            }
+
+            if (best == null)
+                return false;
+            var bytes = System.Text.Encoding.UTF8.GetBytes(command + "\0");
+            fixed (byte* ptr = bytes)
+                best->SetText(ptr);
+            return true;
+        }
+        catch (Exception exception)
+        {
+            Log.Warning(exception, "Could not place a tell in the chat box.");
+            return false;
+        }
     }
 
     private static string SpeakerHome(IHandleableChatMessage message)
@@ -1187,7 +1279,9 @@ public sealed class Plugin : IDalamudPlugin
         this.config.NewestFirst = this.session.NewestFirst;
         this.config.WeekDetailShare = this.session.WeekDetailShare;
         this.config.ShowAllServers = this.session.ShowAllServers;
+        this.config.PauseInPvp = this.session.PauseInPvp;
         this.config.ShowResets = this.session.ShowResets;
+        this.config.LightCalendar = this.session.LightCalendar;
         this.config.SyncPendingColor = this.session.SyncPendingColor;
         this.config.SharedBarColor = this.session.SharedBarColor;
         this.config.TwitchColor = this.session.TwitchColor;
@@ -1333,7 +1427,7 @@ public sealed class Plugin : IDalamudPlugin
 
     private bool OnSyncAttach(byte[] signature, string world)
     {
-        if (!SyncGate.AllowWrite(signature))
+        if (this.PausedForPvp() || !SyncGate.AllowWrite(signature))
             return false;
         var home = this.DetectedWorld(world);
         if (!PlayableWorlds.TryCanonical(home, out var canonical))
@@ -1353,7 +1447,7 @@ public sealed class Plugin : IDalamudPlugin
 
     private string OnSyncPull(byte[] signature)
     {
-        if (!SyncGate.AllowRead(signature) || this.syncBook is null)
+        if (this.PausedForPvp() || !SyncGate.AllowRead(signature) || this.syncBook is null)
             return "";
         var rows = SyncExport.FromLocal(this.syncBook, this.session.Log.Entries, this.session.Places);
         return System.Text.Encoding.UTF8.GetString(RelayCodec.EncodeList(rows));
@@ -1386,7 +1480,7 @@ public sealed class Plugin : IDalamudPlugin
     private void ProbeRelay()
     {
         var book = this.syncBook;
-        if (book is null || !SyncGate.IsAttached)
+        if (book is null || !SyncGate.IsAttached || this.PausedForPvp())
             return;
         var host = book.RelayHost ?? "";
         var port = book.RelayPort;
@@ -1408,6 +1502,8 @@ public sealed class Plugin : IDalamudPlugin
 
     private string OnSyncIngest(byte[] signature, int openConnections, string json)
     {
+        if (this.PausedForPvp())
+            return "0";
         if (!SyncGate.AllowWrite(signature) || this.syncBook is null)
             return RelayProtocol.Denied;
         var rows = RelayCodec.DecodeList(System.Text.Encoding.UTF8.GetBytes(json ?? ""));

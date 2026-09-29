@@ -8,15 +8,23 @@ public static class GitHubFeedback
     public const string Repo = "https://github.com/ibigsnet/shout-calendar";
 
     public static string FeatureUrl(string? version) =>
-        IssueUrl("Feature request: ", FeatureBody(version));
+        IssueUrl("feature_request.md", "Feature request: " + PluginLine(version), FeatureBody(version));
 
     public static string ErrorUrl(string? version) =>
-        IssueUrl("Error report: ", ErrorBody(version));
+        IssueUrl("error_report.md", "Error report: " + PluginLine(version), ErrorBody(version));
 
-    public static string IssueUrl(string title, string body)
+    public static string FeaturePrompt(string? version) =>
+        $"A GitHub feature request for {PluginLine(version)}. The form is filled in. Edit it, then submit. A GitHub account is required.";
+
+    public static string ErrorPrompt(string? version) =>
+        $"A GitHub error report for {PluginLine(version)}. The form is filled in. Edit it, then submit. A GitHub account is required.";
+
+    public static string IssueUrl(string template, string title, string body)
     {
         var builder = new StringBuilder(Repo);
-        builder.Append("/issues/new?title=");
+        builder.Append("/issues/new?template=");
+        builder.Append(Uri.EscapeDataString(template));
+        builder.Append("&title=");
         builder.Append(Uri.EscapeDataString(title));
         builder.Append("&body=");
         builder.Append(Uri.EscapeDataString(body));
@@ -51,7 +59,7 @@ public static class GitHubFeedback
         ### Plugin
         {PluginLine(version)}
 
-        Leave out character names, Discord invites, and log lines that name other players.
+        <!-- Leave out character names, Discord invites, and log lines that name other players. -->
         """;
 
     private static string PluginLine(string? version)

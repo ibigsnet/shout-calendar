@@ -368,14 +368,20 @@ public class ReviewTests
             true,
             "toast",
             default);
-        var line = AlarmNotice.Line(entry, 15);
+        var line = AlarmNotice.Line(entry, 15, "Diabolos");
         Assert.StartsWith("Shout Calendar:", line, StringComparison.Ordinal);
+        Assert.Contains("Server hop to Goblin first", line, StringComparison.Ordinal);
+        Assert.Contains("You are on Diabolos (Crystal)", line, StringComparison.Ordinal);
+        Assert.Contains("Visit Another World Server", line, StringComparison.Ordinal);
+        Assert.Contains("Teleport: New Gridania aetheryte", line, StringComparison.Ordinal);
+        Assert.Contains("The Lavender Beds ward 14", line, StringComparison.Ordinal);
         Assert.Contains("starts in 15 minutes", line, StringComparison.Ordinal);
         Assert.Contains("18:00", line, StringComparison.Ordinal);
         Assert.Contains("2026-09-27", line, StringComparison.Ordinal);
-        Assert.Contains("Lavender Beds", line, StringComparison.Ordinal);
-        Assert.Contains("Tirita Rita", line, StringComparison.Ordinal);
-        Assert.Contains("3pm PT", line, StringComparison.Ordinal);
+        Assert.DoesNotContain("3pm PT", line, StringComparison.Ordinal);
+        var home = AlarmNotice.Line(entry, 15, "Goblin");
+        Assert.DoesNotContain("Server hop", home, StringComparison.Ordinal);
+        Assert.Contains("Teleport: New Gridania aetheryte", home, StringComparison.Ordinal);
         Assert.Contains("is starting", AlarmNotice.Line(entry, 0), StringComparison.Ordinal);
     }
 

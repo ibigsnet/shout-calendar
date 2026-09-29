@@ -303,6 +303,32 @@ public sealed class WorldCalendar
         return events.Where(item => open.Contains(item.World)).ToArray();
     }
 
+    /// <summary>
+    /// Servers turned off in Sync stay out. The world you are standing on still counts.
+    /// </summary>
+    public bool SharesPending(string world, bool showAll, string? standing)
+    {
+        if (!PlayableWorlds.TryCanonical(world, out var canonical))
+            return true;
+        if (PlayableWorlds.TryCanonical(standing, out var here) && here.Equals(canonical, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return showAll && this.IsChecked(canonical);
+    }
+
+    /// <summary>
+    /// Show all adds pending for open calendars. Sync settings are the limit.
+    /// </summary>
+    public bool DrawnPending(string world, bool showAll, string? standing)
+    {
+        if (!this.SharesPending(world, showAll, standing))
+            return false;
+        if (!PlayableWorlds.TryCanonical(world, out var canonical))
+            return true;
+        if (PlayableWorlds.TryCanonical(standing, out var here) && here.Equals(canonical, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return this.IsViewing(canonical);
+    }
+
     public bool ShowsLocal(CalendarEntry entry)
     {
         if (entry.Manual)

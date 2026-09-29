@@ -22,6 +22,14 @@ public class LinkTests
         var full = LinkFinder.Find("https://www.twitch.tv/examplecaster and twitch.com/examplecaster");
         var once = Assert.Single(full);
         Assert.Contains("examplecaster", once.Url, StringComparison.OrdinalIgnoreCase);
+        var carrd = LinkFinder.Find("Lalaween 8pm Goblet W21 P35 lalaween2026.carrd.co");
+        var page = Assert.Single(carrd);
+        Assert.Equal("https://lalaween2026.carrd.co", page.Url);
+        Assert.Equal("lalaween2026.carrd.co", page.Label);
+        Assert.Empty(LinkFinder.Find("doors at 8.00 pm"));
+        var note = NoteLayout.Lines("Lalaween tonight 8pm / Goblet W21 P35 lalaween2026.carrd.co");
+        Assert.Contains("lalaween2026.carrd.co", note);
+        Assert.Contains("Goblet W21 P35", note);
     }
 
     [Fact]
@@ -43,12 +51,18 @@ public class LinkTests
         var feature = GitHubFeedback.FeatureUrl("0.1.24");
         var error = GitHubFeedback.ErrorUrl("0.1.24");
         Assert.StartsWith("https://github.com/ibigsnet/shout-calendar/issues/new?", feature, StringComparison.Ordinal);
-        Assert.Contains("title=Feature%20request", feature, StringComparison.Ordinal);
-        Assert.Contains("Shout%20Calendar%200.1.24", feature, StringComparison.Ordinal);
-        Assert.Contains("title=Error%20report", error, StringComparison.Ordinal);
+        Assert.Contains("template=feature_request.md", feature, StringComparison.Ordinal);
+        Assert.Contains("title=Feature%20request%3A%20Shout%20Calendar%200.1.24", feature, StringComparison.Ordinal);
+        Assert.Contains("template=error_report.md", error, StringComparison.Ordinal);
+        Assert.Contains("title=Error%20report%3A%20Shout%20Calendar%200.1.24", error, StringComparison.Ordinal);
         Assert.Contains("What%20happened", error, StringComparison.Ordinal);
+        Assert.Contains("0.1.24", GitHubFeedback.ErrorPrompt("0.1.24"), StringComparison.Ordinal);
+        Assert.DoesNotContain("%", GitHubFeedback.ErrorPrompt("0.1.24"), StringComparison.Ordinal);
         Assert.DoesNotContain("labels=", feature, StringComparison.Ordinal);
         Assert.DoesNotContain("labels=", error, StringComparison.Ordinal);
+        var wrapped = PromptLayout.Wrap(error, 40);
+        Assert.DoesNotContain("\n\n", wrapped, StringComparison.Ordinal);
+        Assert.True(wrapped.Split('\n').All(line => line.Length <= 40));
         Assert.True(LinkFinder.IsHttp(feature));
         Assert.True(LinkFinder.IsHttp(error));
     }

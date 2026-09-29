@@ -160,6 +160,44 @@ public class HarvestTests
     }
 
     [Fact]
+    public void GameClockIconsBecomeARange()
+    {
+        var eastern = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+        var places = new PlaceCatalog(["The Goblet"]);
+        const string text = "Open \uE031 9\uE06E-12\uE06D EST at The Goblet W\uE096-P\uE093\uE092";
+        var entry = ShoutHarvest.TryHarvest(text, ShoutHarvest.ShoutChannel, ShoutAt, places, aggressive: true, zone: eastern);
+        Assert.NotNull(entry);
+        Assert.Equal(new TimeOnly(21, 0), entry.Time);
+        Assert.Equal(new TimeOnly(0, 0), entry.End);
+        Assert.Equal(7, entry.Ward);
+        Assert.Contains("plot 43", entry.Place);
+        Assert.Contains("\uE031", entry.EventText);
+
+        var glued = ShoutHarvest.TryHarvest(
+            "Open 9\uE06E-2\uE06DEST at The Goblet ward 8 plot 5",
+            ShoutHarvest.ShoutChannel,
+            ShoutAt,
+            places,
+            aggressive: true,
+            zone: eastern);
+        Assert.NotNull(glued);
+        Assert.Equal(new TimeOnly(21, 0), glued.Time);
+        Assert.Equal(new TimeOnly(2, 0), glued.End);
+
+        Assert.Equal("7:30pm - 11:30pm ET", IconText.Plain("\uE096\uE0AD\uE06E - \uE09A\uE0AD\uE06E\uE0D2"));
+        var half = ShoutHarvest.TryHarvest(
+            "Open \uE096\uE0AD\uE06E - \uE09A\uE0AD\uE06E\uE0D2 at The Goblet ward 5 plot 30",
+            ShoutHarvest.ShoutChannel,
+            ShoutAt,
+            places,
+            aggressive: true,
+            zone: eastern);
+        Assert.NotNull(half);
+        Assert.Equal(new TimeOnly(19, 30), half.Time);
+        Assert.Equal(new TimeOnly(23, 30), half.End);
+    }
+
+    [Fact]
     public void SingleClockTimeIsOnTheCalendarAndNotOngoing()
     {
         var session = new CalendarSession(new DateOnly(2026, 9, 1));
@@ -356,6 +394,18 @@ public class HarvestTests
         Assert.True(worlds.IsChecked("Diabolos"));
         Assert.False(worlds.IsChecked("Goblin"));
         Assert.False(worlds.DataCenterChecked("Crystal"));
+        worlds.SetChecked("Zalera", true);
+        Assert.True(worlds.SharesPending("Zalera", true, "Diabolos"));
+        Assert.False(worlds.SharesPending("Faerie", true, "Diabolos"));
+        Assert.True(worlds.SharesPending("Diabolos", true, "Diabolos"));
+        Assert.False(worlds.SharesPending("Zalera", false, "Diabolos"));
+        Assert.True(worlds.SharesPending("Faerie", false, "Faerie"));
+        Assert.False(worlds.DrawnPending("Zalera", true, "Diabolos"));
+        Assert.True(worlds.DrawnPending("Diabolos", true, "Diabolos"));
+        worlds.SetViewing("Zalera", true);
+        Assert.True(worlds.DrawnPending("Zalera", true, "Diabolos"));
+        Assert.False(worlds.DrawnPending("Faerie", true, "Diabolos"));
+        Assert.False(worlds.DrawnPending("Zalera", false, "Diabolos"));
     }
 
     [Fact]

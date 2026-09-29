@@ -47,15 +47,32 @@ public static class SyncFill
             elapsed >= SlowPass);
     }
 
+    /// <summary>
+    /// Rows the buffer actually released this pass. An empty release already applied the fetch, so it is not a limit.
+    /// </summary>
+    public static SyncFillReport FromPass(
+        IReadOnlyList<SyncAnnouncement> released,
+        int added,
+        DateTime now,
+        TimeSpan elapsed)
+    {
+        if (released.Count == 0)
+            return new SyncFillReport(0, 0, 0, 0, 0, 0, 0, false);
+        IReadOnlyList<SyncAnnouncement> admitted = added >= released.Count
+            ? released
+            : released.Take(Math.Max(0, added)).ToList();
+        return Measure(released, admitted, now, elapsed);
+    }
+
     public static string? StatusTip(SyncFillReport report)
     {
         if (report.DroppedCurrent > 0)
-            return "Sync limited — raise Limits or lower Items per tick.";
+            return "Limited — raise Items per tick or Download Mb/s.";
         return null;
     }
 
     public static string ChatTip() =>
-        "Shout Calendar: sync is limited. Raise Connections, Mb/s, Items per tick, or Stored/Memory under Sync Limits.";
+        "Shout Calendar: sync is limited. Raise Items per tick or Download Mb/s under Sync Limits.";
 }
 
 public readonly record struct SyncFillReport(

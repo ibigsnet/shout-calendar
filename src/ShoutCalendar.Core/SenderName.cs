@@ -26,4 +26,47 @@ public static class SenderName
 
         return string.Join(' ', words);
     }
+
+    /// <summary>Character name and the world attached to the chat sender, when one is known.</summary>
+    public static (string Name, string World) TellTarget(string? sender, string? speakerWorld)
+    {
+        var clean = Clean(sender);
+        var preferred = "";
+        if (PlayableWorlds.TryCanonical(speakerWorld, out var known))
+            preferred = known;
+        if (clean.Length == 0)
+            return ("", preferred);
+
+        if (preferred.Length > 0 && TryStrip(clean, preferred, out var named))
+            return (named, preferred);
+
+        foreach (var world in PlayableWorlds.All.OrderByDescending(item => item.Length))
+        {
+            if (!TryStrip(clean, world, out var stripped))
+                continue;
+            return (stripped, preferred.Length > 0 ? preferred : world);
+        }
+
+        return (clean, preferred);
+    }
+
+    private static bool TryStrip(string clean, string world, out string name)
+    {
+        name = clean;
+        if (world.Length == 0 || clean.Length <= world.Length)
+            return false;
+        if (clean.EndsWith(" " + world, StringComparison.OrdinalIgnoreCase))
+        {
+            name = clean[..^(world.Length + 1)].Trim();
+            return name.Length > 0;
+        }
+
+        if (!clean.EndsWith(world, StringComparison.OrdinalIgnoreCase))
+            return false;
+        var boundary = clean.Length - world.Length;
+        if (!char.IsLetter(clean[boundary - 1]))
+            return false;
+        name = clean[..boundary].Trim();
+        return name.Length >= 2;
+    }
 }

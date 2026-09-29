@@ -48,7 +48,7 @@ public static class SyncResume
             return true;
         if (!string.IsNullOrWhiteSpace(snap.RelayHost) || snap.RelayPort > 0)
             return true;
-        if (!snap.ShowSync || snap.Informedaholic || snap.MirrorRelay)
+        if (!snap.ShowSync || snap.Informedaholic || snap.MirrorRelay || snap.DebugPerf)
             return true;
         var settings = snap.Settings;
         if (settings is not null && (
@@ -63,9 +63,13 @@ public static class SyncResume
         return false;
     }
 
+    private static int UploadBytes(SyncLimits limits) =>
+        limits.UploadBytesPerSecond < 1 ? 125_000 : limits.UploadBytesPerSecond;
+
     private static bool SameLimits(SyncLimits left, SyncLimits right) =>
         left.MaxConnections == right.MaxConnections
         && left.BytesPerSecond == right.BytesPerSecond
+        && UploadBytes(left) == UploadBytes(right)
         && left.MaxStoredBytes == right.MaxStoredBytes
         && left.MaxItemsPerTick == right.MaxItemsPerTick
         && left.MaxMemoryBytes == right.MaxMemoryBytes;

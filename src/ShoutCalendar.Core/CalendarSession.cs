@@ -115,10 +115,16 @@ public sealed class CalendarSession
     /// <summary>When set, pending invites that name another world stay on the list and on the calendar.</summary>
     public bool ShowAllServers { get; set; }
 
+    /// <summary>When set, chat, alarms, and sync wait outside a PvP match. The Wolves' Den still runs.</summary>
+    public bool PauseInPvp { get; set; } = true;
+
     /// <summary>World the client is standing on.</summary>
     public string CurrentWorld { get; set; } = "";
 
     public bool ShowResets { get; set; } = true;
+
+    /// <summary>Draws the month with fewer windows. For machines where the calendar drops frames.</summary>
+    public bool LightCalendar { get; set; }
 
     public Vector4 SyncPendingColor { get; set; } = new(0.63f, 0.28f, 0.72f, 0.95f);
 

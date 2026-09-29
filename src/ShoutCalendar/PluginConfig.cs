@@ -97,7 +97,11 @@ public sealed class PluginConfig : IPluginConfiguration
 
     public bool ShowAllServers { get; set; }
 
+    public bool? PauseInPvp { get; set; }
+
     public bool? ShowResets { get; set; }
+
+    public bool LightCalendar { get; set; }
 
     public Vector4 SyncPendingColor { get; set; } = new(0.63f, 0.28f, 0.72f, 0.95f);
 

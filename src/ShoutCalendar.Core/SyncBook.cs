@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 
 namespace ShoutCalendar.Core;
@@ -33,6 +34,11 @@ public sealed class SyncSnapshot
     public bool Informedaholic { get; set; }
 
     public bool MirrorRelay { get; set; }
+
+    /// <summary>When set, each fetch pass appends a performance line. Off unless chosen.</summary>
+    public bool DebugPerf { get; set; }
+
+    public List<string> PerfLog { get; set; } = new();
 
     public List<SyncAnnouncement> Events { get; set; } = new();
 
@@ -99,6 +105,38 @@ public sealed class SyncBook
     /// <summary>Last ingest fill report. Not stored.</summary>
     public SyncFillReport? LastFill { get; private set; }
 
+    /// <summary>When set, each fetch pass appends a performance line. Off unless chosen.</summary>
+    public bool DebugPerf { get; set; }
+
+    private readonly List<string> perfLog = new();
+
+    private readonly object perfGate = new();
+
+    public string[] CopyPerf()
+    {
+        lock (this.perfGate)
+            return this.perfLog.ToArray();
+    }
+
+    public void NotePerf(string line)
+    {
+        if (!this.DebugPerf || string.IsNullOrWhiteSpace(line))
+            return;
+        lock (this.perfGate)
+        {
+            this.perfLog.Add(line.Trim());
+            var extra = this.perfLog.Count - SyncPerf.Keep;
+            if (extra > 0)
+                this.perfLog.RemoveRange(0, extra);
+        }
+    }
+
+    public void ClearPerf()
+    {
+        lock (this.perfGate)
+            this.perfLog.Clear();
+    }
+
     public int StoredBytes
     {
         get
@@ -149,6 +187,8 @@ public sealed class SyncBook
         this.HoldOffSeconds = 60;
         this.Informedaholic = false;
         this.MirrorRelay = false;
+        this.DebugPerf = false;
+        this.ClearPerf();
         this.RelayStatus = "";
         this.SyncStatus = "";
         this.Limits = new SyncLimits();
@@ -322,6 +362,38 @@ public sealed class SyncBook
             return this.AcceptRemoteUnlocked(id);
     }
 
+    public bool SetClock(string id, string dateText, string timeText)
+    {
+        lock (this.eventsGate)
+        {
+            var item = this.Events.FirstOrDefault(row => row.Id == id);
+            if (item is null)
+                return false;
+            var changed = false;
+            if (DateOnly.TryParseExact(dateText.Trim(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day))
+            {
+                var written = day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                if (!string.Equals(item.Date, written, StringComparison.Ordinal))
+                {
+                    item.Date = written;
+                    changed = true;
+                }
+            }
+
+            if (ZoneClock.TryTyped(timeText, out var start, out _))
+            {
+                var written = start.ToString("HH:mm", CultureInfo.InvariantCulture);
+                if (!string.Equals(item.Time, written, StringComparison.Ordinal))
+                {
+                    item.Time = written;
+                    changed = true;
+                }
+            }
+
+            return changed;
+        }
+    }
+
     private bool AcceptRemoteUnlocked(string id)
     {
         var item = this.Events.FirstOrDefault(row => row.Id == id && row.FromSync && !row.HarvestedLocally);
@@ -432,6 +504,8 @@ public sealed class SyncBook
             SyncStatus = this.SyncStatus,
             Informedaholic = this.Informedaholic,
             MirrorRelay = this.MirrorRelay,
+            DebugPerf = this.DebugPerf,
+            PerfLog = this.CopyPerf().ToList(),
             Events = this.CopyEvents().ToList(),
             DismissedKeys = this.DismissedKeys.ToList(),
             BookId = this.BookId,
@@ -467,8 +541,25 @@ public sealed class SyncBook
         this.SyncStatus = snapshot.SyncStatus ?? "";
         this.Informedaholic = snapshot.Informedaholic;
         this.MirrorRelay = snapshot.MirrorRelay;
+        this.DebugPerf = snapshot.DebugPerf;
+        lock (this.perfGate)
+        {
+            this.perfLog.Clear();
+            foreach (var line in snapshot.PerfLog ?? [])
+            {
+                if (string.IsNullOrWhiteSpace(line))
+                    continue;
+                this.perfLog.Add(line.Trim());
+            }
+
+            var extra = this.perfLog.Count - SyncPerf.Keep;
+            if (extra > 0)
+                this.perfLog.RemoveRange(0, extra);
+        }
         if (this.Limits.BytesPerSecond == 65_536)
             this.Limits.BytesPerSecond = 1_000_000;
+        if (this.Limits.UploadBytesPerSecond < 1)
+            this.Limits.UploadBytesPerSecond = 125_000;
         if (this.Limits.MaxStoredBytes == 1_048_576)
             this.Limits.MaxStoredBytes = 32_000_000;
         if (this.Limits.MaxMemoryBytes == 2_097_152)
