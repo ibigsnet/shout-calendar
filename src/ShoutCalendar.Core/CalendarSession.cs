@@ -79,6 +79,22 @@ public sealed class CalendarSession
 
     public bool AlarmResets { get; set; } = true;
 
+    /// <summary>0 is a flat chip. 2 is a strong shade. 3 is the strongest.</summary>
+    public float ShadeStrength { get; set; }
+
+    /// <summary>Color names whose chip text is the opposite of the usual white or black.</summary>
+    public HashSet<string> InkFlips { get; } = new(StringComparer.Ordinal);
+
+    public bool InkFlipped(string key) => this.InkFlips.Contains(key);
+
+    public void SetInkFlip(string key, bool flipped)
+    {
+        if (flipped)
+            this.InkFlips.Add(key);
+        else
+            this.InkFlips.Remove(key);
+    }
+
     public Vector4 PendingColor { get; set; } = new(0.93f, 0.62f, 0.12f, 0.95f);
 
     public Vector4 AcceptedColor { get; set; } = new(0.12f, 0.48f, 0.24f, 0.95f);
@@ -127,6 +143,7 @@ public sealed class CalendarSession
 
     /// <summary>When set, pending invites that name another world stay on the list and on the calendar.</summary>
     public bool ShowAllServers { get; set; }
+    public PendingScope PendingScope { get; set; }
 
     /// <summary>When set, chat, alarms, and sync wait outside a PvP match. The Wolves' Den still runs.</summary>
     public bool PauseInPvp { get; set; } = true;
@@ -139,8 +156,17 @@ public sealed class CalendarSession
     /// <summary>Draws the month with fewer windows. On unless the user turns it off.</summary>
     public bool LightCalendar { get; set; } = true;
 
+    public CalendarAppearance Appearance { get; set; } = new();
+
     /// <summary>Prints a chat line when a shout is kept. Off unless the user turns it on.</summary>
     public bool ParseDebug { get; set; }
+
+    /// <summary>Plays a chat sound with the parse debug line.</summary>
+    public bool ParseDebugSound { get; set; }
+
+    public int ParseDebugSoundEffect { get; set; } = 2;
+
+    public string ParseDebugSoundFile { get; set; } = "";
 
     /// <summary>Null until the user picks Week or Month.</summary>
     public bool? WeekView { get; set; }
@@ -200,6 +226,9 @@ public sealed class CalendarSession
 
     public bool ChannelOn(int channel) =>
         (this.Listening ? this.Channels : this.pausedChannels).Contains(channel);
+
+    /// <summary>A known chat that is unchecked stays off the calendar. Hand-added invites have no chat.</summary>
+    public bool ShowsChannel(int channel) => !ChatChannels.IsKnown(channel) || this.ChannelOn(channel);
 
     public void SetListening(bool on)
     {

@@ -48,6 +48,8 @@ public static class SyncResume
             return true;
         if (!string.IsNullOrWhiteSpace(snap.RelayHost) || snap.RelayPort > 0)
             return true;
+        if (!string.IsNullOrWhiteSpace(snap.BackupRelayHost) || snap.BackupRelayChoice is SyncRelays.CustomLabel or SyncRelays.OffLabel)
+            return true;
         if (!snap.ShowSync || snap.Informedaholic || snap.MirrorRelay || snap.DebugPerf)
             return true;
         var settings = snap.Settings;

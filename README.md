@@ -43,9 +43,11 @@ Web addresses and `discord.gg` invites in an event are buttons. Opening one asks
 
 **Alarms** ring a chat sound, `<se.1>` through `<se.16>`, when an accepted event's clock arrives. **Minutes before** defaults to 15. An event accepted inside that window rings then. One that started longer ago does not. **Alarm unaccepted events** is off until checked. Test plays the selected sound.
 
-The left side has **Pending**, **Settings**, **Resets**, and **Colors**. Sync settings is a tab on that row when Sync is attached. Pending is the invite list, plus shared invites that are still waiting. Settings holds the hold time, the aggressive filter, Informedaholic, link choice, chats, and alarms. Informedaholic is off. When it is on, kept invites are accepted for you. Resets lists the clocks. Jumbo Cactpot, the weekly reset, and A Nocturne for Heroes start on. The other rows, including Wondrous Tails, start off. The month and year in the header are lists. The year list opens on the current year. Today is a light wash. The other colors are unchanged until you edit them.
+The left side has **Pending**, **Settings**, **Resets**, and **Appearance**, with **Colors** inside an expandable section under Appearance. Sync settings is a tab on that row when Sync is attached. Pending is the invite list, plus shared invites that are still waiting. Without Sync, it shows only locally collected invitations and hides Sync scope controls. With Sync attached, **Pending from** offers Current world, Open calendars, or All synced worlds. The status line shows the last successful check and how many seconds, minutes or hours ago it occurred; rapid status updates are buffered for 100 ms to reduce flicker. Settings holds the hold time, the aggressive filter, Informedaholic, link choice, chats, and alarms. Informedaholic is off. When it is on, kept invites are accepted for you. Resets lists the clocks. Jumbo Cactpot, the weekly reset, and A Nocturne for Heroes start on. The other rows, including Wondrous Tails, start off. The month and year in the header are lists. The year list opens on the current year. Today is a light wash. The other colors are unchanged until you edit them.
 
 Each alarm has its own `<se.#>` and an optional WAV file. An empty file uses the chat sound. Reset alarms are separate from accepted and pending invites. A weekday such as "next Tuesday", and a glued ward such as `W3P26`, count toward the date and the place.
+
+See [the appearance and status guide](APPEARANCE.md) for presets, compact mode, overnight styles and Sync controls.
 
 ## Build
 

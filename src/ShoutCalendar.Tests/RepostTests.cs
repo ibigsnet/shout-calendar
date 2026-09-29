@@ -1,3 +1,4 @@
+using System.Numerics;
 using ShoutCalendar.Core;
 
 namespace ShoutCalendar.Tests;
@@ -137,6 +138,28 @@ public class RepostTests
         Assert.True(DaySort.Compare(true, 1, evening, "Late", false, 1, afternoon, "Early") < 0);
         Assert.True(DaySort.Compare(true, 1, afternoon, "Early pin", true, 1, evening, "Late pin") < 0);
         Assert.True(DaySort.Compare(false, 1, afternoon, "Early", false, 1, evening, "Late") < 0);
+        Assert.True(DaySort.Compare(false, 1, new TimeOnly(0, 30), "Morning", false, 0, new TimeOnly(21, 0), "Span") < 0);
+        Assert.Equal("12:00-04:00 ", DaySort.RangeLabel(new TimeOnly(12, 0), new TimeOnly(4, 0)));
+        Assert.Equal("00:00-04:00 ", DaySort.SliceLabel(new DateOnly(2026, 9, 30), new DateOnly(2026, 9, 29), new TimeOnly(12, 0), new TimeOnly(4, 0)));
+        var arch = NightCurve.Between(new Vector2(40f, 80f), new Vector2(120f, 90f));
+        Assert.Equal(new Vector2(80f, 85f), arch.C1);
+        Assert.Equal(arch.C1, arch.C2);
+        var parents = DayNest.Parents(
+        [
+            new DayInterval(new TimeOnly(0, 30), new TimeOnly(5, 0), true, false),
+            new DayInterval(new TimeOnly(4, 0), new TimeOnly(4, 0), false, false),
+            new DayInterval(new TimeOnly(12, 0), new TimeOnly(4, 0), true, true),
+        ]);
+        Assert.Equal(-1, parents[0]);
+        Assert.Equal(0, parents[1]);
+        Assert.Equal(-1, parents[2]);
+        var orange = new Vector4(0.85f, 0.45f, 0.12f, 1f);
+        var lifted = LayerShade.Lift(orange, 1);
+        Assert.True(lifted.X > orange.X);
+        Assert.True(LayerShade.Shadow(orange).X < orange.X);
+        Assert.Equal(orange.X, LayerShade.Lift(orange, 2, 0f).X);
+        Assert.Equal(orange.X, LayerShade.Shadow(orange, 0f).X);
+        Assert.Equal("04:00 ", DaySort.RangeLabel(new TimeOnly(4, 0), new TimeOnly(4, 0)));
     }
 
     [Fact]

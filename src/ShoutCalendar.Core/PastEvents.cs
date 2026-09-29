@@ -27,24 +27,6 @@ public static class PastEvents
 
     public static bool Ended(SyncAnnouncement item, DateTime now, TimeZoneInfo? zone = null)
     {
-        DateOnly? date = null;
-        if (DateOnly.TryParseExact((item.Date ?? "").Trim(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsedDate))
-            date = parsedDate;
-        TimeOnly? time = null;
-        if (TimeOnly.TryParseExact((item.Time ?? "").Trim(), "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsedTime))
-            time = parsedTime;
-        var entry = new CalendarEntry(
-            date,
-            time,
-            null,
-            null,
-            item.World,
-            "",
-            item.Text,
-            "",
-            item.Accepted,
-            item.Id,
-            default);
-        return Ended(entry, now, zone);
+        return Ended(SyncClock.Entry(item, zone), now, zone);
     }
 }

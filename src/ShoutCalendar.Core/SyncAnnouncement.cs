@@ -14,6 +14,9 @@ public sealed class SyncAnnouncement
 
     public string Text { get; set; } = "";
 
+    public string Title { get; set; } = "";
+    public string Place { get; set; } = "";
+
     public bool FromSync { get; set; }
 
     public bool HarvestedLocally { get; set; }
@@ -28,6 +31,15 @@ public sealed class SyncAnnouncement
 
     public string Time { get; set; } = "";
 
+    public DateTimeOffset? StartUtc { get; set; }
+    public DateTimeOffset? EndUtc { get; set; }
+    public string SourceTimeZone { get; set; } = "";
+    public string End { get; set; } = "";
+
+    public DateTimeOffset ObservedAt { get; set; }
+
+    public string Repeat { get; set; } = "";
+
     public int Revision { get; set; }
 
     public string ContentKey { get; set; } = "";
@@ -38,36 +50,50 @@ public sealed class SyncAnnouncement
     /// <summary>Plugin version that parsed the shout.</summary>
     public string PluginVersion { get; set; } = "";
 
+    /// <summary>Personal clock correction, saved locally and never sent to the relay.</summary>
+    public bool ClockEditedLocally { get; set; }
+
+    // Personal state: snapshot only, deliberately absent from RelayCodec.Wire.
+    public string SourceKey { get; set; } = "";
+    public List<DateOnly> ExcludedDates { get; set; } = new();
+    public DateOnly? RepeatUntil { get; set; }
+    public bool SeriesDeleted { get; set; }
+
     public bool Declined { get; set; }
 
     /// <summary>Parked locally. Not a decline and not a tombstone.</summary>
     public bool Hidden { get; set; }
 
-    public bool IsSyncPending => this.FromSync && !this.HarvestedLocally && !this.Accepted && !this.Declined && !this.Hidden;
+    public bool IsSyncPending => !this.SeriesDeleted && this.FromSync && !this.HarvestedLocally && !this.Accepted && !this.Declined && !this.Hidden;
 
     public string ColorToken => this.IsSyncPending ? "sync-pending" : this.Accepted ? "accepted" : "pending";
 
     public int PayloadBytes => RelayCodec.Encode(this).Length;
 
-    public static SyncAnnouncement FromLocal(CalendarEntry entry, string homeWorld, string? pluginVersion = null)
+    public static SyncAnnouncement FromLocal(CalendarEntry entry, string homeWorld, string? pluginVersion = null, TimeZoneInfo? calendarZone = null)
     {
         var world = ShareWorld.Choose(homeWorld, entry.SpeakerWorld, entry.Server, entry.EventText);
 
-        return new SyncAnnouncement
+        var item = new SyncAnnouncement
         {
             Id = entry.Id,
             World = world,
             Channel = entry.Channel,
             Text = entry.EventText,
+            Title = EventTitle.Readable(EventTitle.Choose(entry.EventText)), Place = entry.Place,
             HarvestedLocally = true,
             Accepted = entry.Accepted,
             NoteUpdated = entry.NoteUpdated,
             Date = entry.Date?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "",
             Time = entry.Time?.ToString("HH:mm", CultureInfo.InvariantCulture) ?? "",
-            Revision = entry.NoteUpdated ? 2 : 1,
+            ObservedAt = entry.DetectedAt,
+            Repeat = entry.Repeat?.Store() ?? "",
+            Revision = Math.Max(entry.Revision, entry.NoteUpdated ? 2 : 1),
             ShareFormat = global::ShoutCalendar.Core.ShareFormat.Current,
             PluginVersion = (pluginVersion ?? "").Trim(),
         };
+        SyncClock.Stamp(item, entry, calendarZone ?? TimeZoneInfo.Local);
+        return item;
     }
 }
 
@@ -142,17 +168,20 @@ public static class RelayCodec
         }
     }
 
-    public static IReadOnlyList<SyncAnnouncement> DecodeList(ReadOnlySpan<byte> payload)
+    public static IReadOnlyList<SyncAnnouncement> DecodeList(ReadOnlySpan<byte> payload) =>
+        TryDecodeList(payload, out var rows) ? rows : Array.Empty<SyncAnnouncement>();
+
+    public static bool TryDecodeList(ReadOnlySpan<byte> payload, out IReadOnlyList<SyncAnnouncement> rows)
     {
+        rows = Array.Empty<SyncAnnouncement>();
         try
         {
-            var wires = JsonSerializer.Deserialize<Wire[]>(payload, Options) ?? [];
-            return wires.Select(wire => wire.ToAnnouncement()).ToArray();
+            var wires = JsonSerializer.Deserialize<Wire[]>(payload, Options);
+            if (wires is null || wires.Any(wire => wire is null)) return false;
+            rows = wires.Select(wire => wire.ToAnnouncement()).ToArray();
+            return true;
         }
-        catch (JsonException)
-        {
-            return Array.Empty<SyncAnnouncement>();
-        }
+        catch (JsonException) { return false; }
     }
 
     public static byte[] Frame(string verb, byte[] signature, byte[] body)
@@ -174,6 +203,9 @@ public static class RelayCodec
 
         public string Text { get; set; } = "";
 
+        public string Title { get; set; } = "";
+        public string Place { get; set; } = "";
+
         public bool Accepted { get; set; }
 
         public bool NoteUpdated { get; set; }
@@ -187,6 +219,13 @@ public static class RelayCodec
         public string Date { get; set; } = "";
 
         public string Time { get; set; } = "";
+
+        public DateTimeOffset? StartUtc { get; set; }
+        public DateTimeOffset? EndUtc { get; set; }
+        public string SourceTimeZone { get; set; } = "";
+        public string End { get; set; } = "";
+        public DateTimeOffset ObservedAt { get; set; }
+        public string Repeat { get; set; } = "";
 
         public int Revision { get; set; }
 
@@ -202,6 +241,7 @@ public static class RelayCodec
             World = item.World,
             Channel = item.Channel,
             Text = item.Text,
+            Title = item.Title, Place = item.Place,
             Accepted = item.Accepted,
             NoteUpdated = item.NoteUpdated,
             HarvestedLocally = item.HarvestedLocally,
@@ -209,6 +249,12 @@ public static class RelayCodec
             Category = item.Category,
             Date = item.Date,
             Time = item.Time,
+            StartUtc = item.StartUtc,
+            EndUtc = item.EndUtc,
+            SourceTimeZone = item.SourceTimeZone ?? "",
+            End = item.End ?? "",
+            ObservedAt = item.ObservedAt,
+            Repeat = item.Repeat,
             Revision = item.Revision,
             ContentKey = item.ContentKey,
             ShareFormat = item.ShareFormat,
@@ -217,21 +263,28 @@ public static class RelayCodec
 
         public SyncAnnouncement ToAnnouncement() => new()
         {
-            Id = this.Id,
-            World = this.World,
+            Id = this.Id ?? "",
+            World = this.World ?? "",
             Channel = this.Channel,
-            Text = this.Text,
+            Text = this.Text ?? "",
+            Title = this.Title ?? "", Place = this.Place ?? "",
             Accepted = this.Accepted,
             NoteUpdated = this.NoteUpdated,
             HarvestedLocally = this.HarvestedLocally,
             FromSync = this.FromSync,
-            Category = this.Category,
-            Date = this.Date,
-            Time = this.Time,
+            Category = this.Category ?? "",
+            Date = this.Date ?? "",
+            Time = this.Time ?? "",
+            StartUtc = this.StartUtc,
+            EndUtc = this.EndUtc,
+            SourceTimeZone = this.SourceTimeZone ?? "",
+            End = this.End ?? "",
+            ObservedAt = this.ObservedAt,
+            Repeat = this.Repeat ?? "",
             Revision = this.Revision,
-            ContentKey = this.ContentKey,
+            ContentKey = this.ContentKey ?? "",
             ShareFormat = this.ShareFormat,
-            PluginVersion = this.PluginVersion,
+            PluginVersion = this.PluginVersion ?? "",
         };
     }
 }

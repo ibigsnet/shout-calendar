@@ -37,9 +37,11 @@ public static class EventAlarm
             minutesBefore = 0;
 
         var hits = new List<Hit>();
-        foreach (var entry in entries)
+        foreach (var stored in entries)
         {
-            if (!Clock(entry, zone, out var day, out var time) || string.IsNullOrEmpty(entry.Id))
+            var eventMoment = minute.AddMinutes(minutesBefore);
+            var entry = SyncClock.OnDate(stored, DateOnly.FromDateTime(eventMoment), zone);
+            if (entry is null || !Clock(entry, zone, out var day, out var time) || string.IsNullOrEmpty(entry.Id))
                 continue;
             if (entry.Accepted)
             {
@@ -51,9 +53,6 @@ public static class EventAlarm
                 continue;
             }
 
-            var eventMoment = minute.AddMinutes(minutesBefore);
-            if (!OnDay(entry, day, DateOnly.FromDateTime(eventMoment)))
-                continue;
             if (eventMoment.Hour != time.Hour || eventMoment.Minute != time.Minute)
                 continue;
             hits.Add(new Hit(entry.Id, entry.Accepted));
@@ -64,17 +63,21 @@ public static class EventAlarm
 
     public static bool IsStartMinute(CalendarEntry entry, DateTime now, TimeZoneInfo? zone = null)
     {
-        if (!Clock(entry, zone, out var day, out var time) || string.IsNullOrEmpty(entry.Id))
+        entry = SyncClock.OnDate(entry, DateOnly.FromDateTime(now), zone)!;
+        if (entry is null || !Clock(entry, zone, out var day, out var time) || string.IsNullOrEmpty(entry.Id))
             return false;
         var minute = MinuteOf(now);
-        if (!OnDay(entry, day, DateOnly.FromDateTime(minute)))
-            return false;
         return minute.Hour == time.Hour && minute.Minute == time.Minute;
     }
 
     /// <summary>The warning time is this minute or already past, so accepting the invite should ring now.</summary>
     public static bool AlreadyDue(CalendarEntry entry, DateTime now, int minutesBefore, TimeZoneInfo? zone = null)
     {
+        if (entry.Repeat is not null)
+        {
+            entry = SyncClock.OnDate(entry, DateOnly.FromDateTime(now.AddMinutes(Math.Max(0, minutesBefore))), zone)!;
+            if (entry is null) return false;
+        }
         if (!Clock(entry, zone, out var faced, out var time))
             return false;
         if (minutesBefore < 0)
@@ -83,9 +86,7 @@ public static class EventAlarm
         DateOnly day;
         if (entry.Repeat is not null)
         {
-            if (!EventRepeat.FallsOn(entry, today))
-                return false;
-            day = today;
+            day = faced;
         }
         else
         {

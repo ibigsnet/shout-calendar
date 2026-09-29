@@ -75,6 +75,7 @@ public static class HousingTravel
         ("Lav Beds", "The Lavender Beds"),
         ("Lav. Beds", "The Lavender Beds"),
         ("Shirogane", "Shirogane"),
+        ("Shiro", "Shirogane"),
         ("Empyreum", "Empyreum"),
         ("Empy", "Empyreum"),
         ("Mist", "Mist"),

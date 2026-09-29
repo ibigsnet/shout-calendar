@@ -25,4 +25,11 @@ public sealed record CalendarEntry(
     string SpeakerWorld = "",
     Vector4? Color = null,
     bool Hidden = false,
-    bool Pinned = false);
+    bool Pinned = false,
+    DateTimeOffset? StartUtc = null,
+    DateTimeOffset? EndUtc = null,
+    string SourceTimeZone = "",
+    int Revision = 1,
+    DateOnly[]? ExcludedDates = null,
+    DateOnly? RepeatUntil = null,
+    bool SeriesDeleted = false);

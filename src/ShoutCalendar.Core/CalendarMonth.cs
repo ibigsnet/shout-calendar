@@ -92,17 +92,10 @@ public sealed class CalendarMonth
 
     private static bool Covers(CalendarEntry entry, DateOnly day)
     {
-        if (entry.Date is not DateOnly start)
-            return false;
-        if (entry.Repeat is not null)
-        {
-            if (EventRepeat.FallsOn(entry, day))
-                return true;
-            return Overnight.Is(entry.Time, entry.End) && EventRepeat.FallsOn(entry, day.AddDays(-1));
-        }
-
-        if (start == day)
-            return true;
-        return Overnight.Is(entry.Time, entry.End) && start.AddDays(1) == day;
+        var occurrence = SyncClock.OnDate(entry, day)
+            ?? (day > DateOnly.MinValue ? SyncClock.OnDate(entry, day.AddDays(-1)) : null);
+        if (occurrence is null) return false;
+        var range = ZoneClock.ShownRange(occurrence, TimeZoneInfo.Local);
+        return Overnight.Covers(day, range.Date, range.Start, range.End);
     }
 }

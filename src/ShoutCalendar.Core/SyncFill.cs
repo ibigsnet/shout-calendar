@@ -67,12 +67,12 @@ public static class SyncFill
     public static string? StatusTip(SyncFillReport report)
     {
         if (report.DroppedCurrent > 0)
-            return "Limited — raise Items per tick or Download Mb/s.";
+            return $"Limited — {report.DroppedCurrent} current {(report.DroppedCurrent == 1 ? "invite" : "invites")} waiting for a later pass.";
         return null;
     }
 
     public static string ChatTip() =>
-        "Shout Calendar: sync is limited. Raise Items per tick or Download Mb/s under Sync Limits.";
+        "Shout Calendar: invites are waiting for a later sync pass. If the count does not fall, check Invites per sync pass and the storage and transfer limits.";
 }
 
 public readonly record struct SyncFillReport(

@@ -1,0 +1,37 @@
+name: Build and test
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        sdk: ['10.0.101', '10.0.x']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: ${{ matrix.sdk }}
+      - name: Select the matrix SDK
+        run: |
+          python3 - <<'PYSDK'
+          import json, os
+          from pathlib import Path
+          requested = os.environ['TEST_SDK']
+          if not requested.endswith('.x'):
+              Path('global.json').write_text(json.dumps({'sdk': {'version': requested, 'rollForward': 'disable'}}))
+          PYSDK
+        env:
+          TEST_SDK: ${{ matrix.sdk }}
+      - run: dotnet test src/ShoutCalendar.Tests/ShoutCalendar.Tests.csproj -c Release -p:RestoreLockedMode=true --nologo
+      - name: Obtain official Dalamud references
+        run: |
+          curl --fail --location --retry 3 https://goatcorp.github.io/dalamud-distrib/latest.zip --output "$RUNNER_TEMP/dalamud.zip"
+          sha256sum "$RUNNER_TEMP/dalamud.zip"
+          unzip -q "$RUNNER_TEMP/dalamud.zip" -d "$RUNNER_TEMP/dalamud"
+      - name: Build the plugin with submission flags
+        run: dotnet build src/ShoutCalendar/ShoutCalendar.csproj -c Release -p:IsPlogonBuild=True -p:RestoreLockedMode=true -p:DalamudLibPath="$RUNNER_TEMP/dalamud/" --nologo

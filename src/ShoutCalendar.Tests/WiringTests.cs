@@ -7,15 +7,16 @@ public class WiringTests
     {
         var root = RepoRoot();
         var plugin = File.ReadAllText(Path.Combine(root, "src", "ShoutCalendar", "Plugin.cs"));
-        var window = File.ReadAllText(Path.Combine(root, "src", "ShoutCalendar", "CalendarWindow.cs"));
+        var window = File.ReadAllText(Path.Combine(root, "src", "ShoutCalendar", "CalendarWindow.cs"))
+            + File.ReadAllText(Path.Combine(root, "src", "ShoutCalendar", "AppearanceWindow.cs"));
 
         Assert.Contains("CalendarCommand.Open", plugin, StringComparison.Ordinal);
         Assert.Contains("AddHandler", plugin, StringComparison.Ordinal);
         Assert.Contains("OpenMainUi", plugin, StringComparison.Ordinal);
         Assert.Contains("OpenConfigUi", plugin, StringComparison.Ordinal);
         Assert.Contains("this.window.Toggle()", plugin, StringComparison.Ordinal);
-        Assert.Contains("this.session.CurrentMonth()", window, StringComparison.Ordinal);
-        Assert.Contains("this.session.Page(", window, StringComparison.Ordinal);
+        Assert.Contains("this.GridMonth()", window, StringComparison.Ordinal);
+        Assert.Contains("AddMonths(", window, StringComparison.Ordinal);
         Assert.Contains("Button(\"Today\")", window, StringComparison.Ordinal);
         Assert.Contains("folderDay = todayDate.Day", window, StringComparison.Ordinal);
         Assert.Contains("InputTextWithHint(\"##event-search\", \"Search\"", window, StringComparison.Ordinal);
@@ -31,6 +32,8 @@ public class WiringTests
         Assert.Contains("month.Cells", window, StringComparison.Ordinal);
         Assert.Contains("Accept", window, StringComparison.Ordinal);
         Assert.Contains("Decline", window, StringComparison.Ordinal);
+        Assert.Contains("Decline##sync-detail-", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("Purge", window, StringComparison.Ordinal);
         Assert.Contains("Delete", window, StringComparison.Ordinal);
         Assert.Contains("Clear local", window, StringComparison.Ordinal);
         Assert.Contains("Clear local accepted", window, StringComparison.Ordinal);
@@ -42,11 +45,14 @@ public class WiringTests
         Assert.Contains("Alarm unaccepted events", window, StringComparison.Ordinal);
         Assert.Contains("BeginTabItem(\"Resets\")", window, StringComparison.Ordinal);
         Assert.Contains("BeginTabItem(\"Settings\")", window, StringComparison.Ordinal);
-        Assert.Contains("Faster calendar", window, StringComparison.Ordinal);
+        Assert.Contains("Lightweight grid", window, StringComparison.Ordinal);
         Assert.Contains("Parse debug##parse-debug", window, StringComparison.Ordinal);
+        Assert.Contains("Debug sound##parse-debug-sound", window, StringComparison.Ordinal);
+        Assert.Contains("Debug <se.#>##parse-debug-se", window, StringComparison.Ordinal);
         Assert.Contains("Performance log##sync-perf", window, StringComparison.Ordinal);
         Assert.Contains("Off by default.", window, StringComparison.Ordinal);
-        Assert.Contains("BeginTabItem(\"Colors\")", window, StringComparison.Ordinal);
+        Assert.Contains("CollapsingHeader(\"Colors##appearance-colors\")", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("BeginTabItem(\"Colors\")", window, StringComparison.Ordinal);
         Assert.Contains("###day-folder", window, StringComparison.Ordinal);
         Assert.Contains("Local accepted", window, StringComparison.Ordinal);
         Assert.Contains("Local unaccepted", window, StringComparison.Ordinal);
@@ -98,7 +104,7 @@ public class WiringTests
         Assert.Contains("Upload (Mb/s) (Speed cap)", window, StringComparison.Ordinal);
         Assert.Contains("upload starts at 1 Mb/s", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Speed (Mb/s)", window, StringComparison.Ordinal);
-        Assert.Contains("Country mirror", window, StringComparison.Ordinal);
+        Assert.Contains("Backup relay · ", window, StringComparison.Ordinal);
         Assert.Contains("RelayReach.Online", window, StringComparison.Ordinal);
     }
 

@@ -55,7 +55,8 @@ public sealed class PlaceCatalog
             if (space < 5)
                 continue;
             var head = name[..space];
-            if (OrdinaryWord(head))
+            // The first word of a venue is not a data center name.
+            if (OrdinaryWord(head) || DataCenters.IsName(head))
                 continue;
             if (found.Any(hit => hit.StartsWith(head, StringComparison.OrdinalIgnoreCase)))
                 continue;

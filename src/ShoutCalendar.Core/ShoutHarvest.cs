@@ -76,7 +76,7 @@ public static class ShoutHarvest
             nowDay = DateOnly.FromDateTime(heardLocal);
             if (zone is not null && ZoneClock.Converts(until.Label))
             {
-                var untilCivil = Overnight.ContinuesNextDay(start, untilEnd) ? nowDay.Value.AddDays(1) : nowDay.Value;
+                var untilCivil = SyncClock.EndDate(nowDay, start, untilEnd) ?? nowDay.Value;
                 untilEnd = ZoneClock.Move(untilCivil, untilEnd, until.Label, zone).Time;
             }
 
@@ -89,7 +89,7 @@ public static class ShoutHarvest
             clocks.Add(TimeOnly.FromDateTime(departs));
             nowDay = DateOnly.FromDateTime(departs);
         }
-        else if (clocks.Count == 0 && NowRegex.IsMatch(text))
+        else if (clocks.Count == 0 && (NowRegex.IsMatch(text) || LiveInvite.IsGathering(text)))
         {
             clocks.Add(new TimeOnly(heardLocal.Hour, heardLocal.Minute));
             nowDay = DateOnly.FromDateTime(heardLocal);
@@ -161,10 +161,19 @@ public static class ShoutHarvest
             if (nowOnly && strongPlace && ward is null && extras.Count == 0 && coordinates is null)
                 return null;
         }
-        else if (!hasDate && !hasTime && !hasPlace)
-        {
+
+        // "until October 19" names an end, not a night, when the line has no clock and no venue.
+        if (clocks.Count == 0
+            && ward is null
+            && extras.Count == 0
+            && coordinates is null
+            && coordinateZone.Length == 0
+            && district is null
+            && locations.Count == 0
+            && UntilDateRegex.IsMatch(text))
             return null;
-        }
+        if ((!aggressive || writtenDate is not null) && !hasDate && !hasTime && !hasPlace)
+            return null;
 
         var repeat = ReadRepeat(text, statedDate ?? heard);
         DateOnly? date = statedDate;
@@ -182,7 +191,7 @@ public static class ShoutHarvest
             TimeOnly? firstWall = null;
             foreach (var wall in walls)
             {
-                var civilForWall = firstWall is TimeOnly earlier && Overnight.ContinuesNextDay(earlier, wall.Time) ? civil.AddDays(1) : civil;
+                var civilForWall = SyncClock.EndDate(civil, firstWall, wall.Time) ?? civil;
                 var moved = ZoneClock.Converts(wall.Label)
                     ? ZoneClock.Move(civilForWall, wall.Time, wall.Label, zone)
                     : (civilForWall, wall.Time);
@@ -215,7 +224,7 @@ public static class ShoutHarvest
             "",
             false,
             "",
-            default,
+            shoutTimestamp,
             repeat,
             channel);
     }
@@ -243,6 +252,10 @@ public static class ShoutHarvest
     }
 
     public static bool IsWatched(int channel, IReadOnlySet<int>? channels = null) => ChatChannels.Allows(channel, channels);
+
+    private static readonly Regex UntilDateRegex = new(
+        @"\b(?:until|till|through)\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     private static readonly Regex NowRegex = new(
         @"\b(?:right\s+now|now)\b|\bright\s*$",

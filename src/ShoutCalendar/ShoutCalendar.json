@@ -7,5 +7,6 @@
   "Tags": [
     "utility"
   ],
-  "Changelog": "Past events stay off the calendar until show past is on, with one switch for local and one for sync. Pin keeps an invite at the top of that day. Pinned invites stay in time order, and the other invites follow below them. Reposts of the same party on the same night become one invite. Alarms due in the same minute share one chat line. Download and upload are marked as speed caps."
+  "Changelog": "Local-only Pending hides Sync controls when Sync is absent. Last-success status includes elapsed seconds, minutes or hours; a 100 ms display buffer reduces flicker. Includes Appearance presets and expandable Colors, compact three-day view, improved recurring-event handling, and public-relay fallback.",
+  "IconUrl": "https://raw.githubusercontent.com/ibigsnet/shout-calendar/v0.1.32/images/icon.png"
 }

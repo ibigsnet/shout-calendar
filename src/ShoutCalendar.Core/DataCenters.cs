@@ -20,6 +20,10 @@ public static class DataCenters
 
     public readonly record struct Group(string Name, IReadOnlyList<string> Worlds);
 
+    public static bool IsName(string? name) =>
+        !string.IsNullOrWhiteSpace(name)
+        && All.Any(group => group.Name.Equals(name.Trim(), StringComparison.OrdinalIgnoreCase));
+
     public static bool TryGroup(string? world, out string group)
     {
         group = "";

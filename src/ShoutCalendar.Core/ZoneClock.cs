@@ -186,8 +186,13 @@ public static class ZoneClock
     /// <summary>The instant to draw and alarm. A zone label in the text wins over a stored clock.</summary>
     public static Face Shown(CalendarEntry entry, TimeZoneInfo? calendarZone)
     {
+        if (entry.StartUtc is not null || entry.SourceTimeZone.Length > 0)
+        {
+            var range = SyncClock.Range(entry, calendarZone ?? TimeZoneInfo.Local);
+            return new Face(range.Date, range.Start);
+        }
         var storedDate = entry.Date ?? DateOnly.FromDateTime(DateTime.UtcNow);
-        if (calendarZone is null || string.IsNullOrWhiteSpace(entry.EventText))
+        if (entry.NoteUpdated || calendarZone is null || string.IsNullOrWhiteSpace(entry.EventText))
             return new Face(storedDate, entry.Time);
         foreach (var wall in Walls(entry.EventText))
         {
@@ -217,20 +222,23 @@ public static class ZoneClock
     /// <summary>Start and end to draw. A zone after "9pm to 12am (CT)" applies to both clocks.</summary>
     public static Range ShownRange(CalendarEntry entry, TimeZoneInfo? calendarZone)
     {
+        if (entry.StartUtc is not null || entry.SourceTimeZone.Length > 0)
+            return SyncClock.Range(entry, calendarZone ?? TimeZoneInfo.Local);
         var storedDate = entry.Date ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        if (entry.NoteUpdated) return new Range(storedDate, entry.Time, entry.End);
         if (TryNowUntil(entry.EventText, out var until))
         {
             var untilEnd = entry.End ?? until.Time;
             if (calendarZone is not null && Converts(until.Label) && entry.Time is TimeOnly begin)
             {
-                var untilCivil = Overnight.ContinuesNextDay(begin, until.Time) ? storedDate.AddDays(1) : storedDate;
+                var untilCivil = SyncClock.EndDate(storedDate, begin, until.Time) ?? storedDate;
                 untilEnd = Move(untilCivil, until.Time, until.Label, calendarZone).Time;
             }
 
             return new Range(storedDate, entry.Time, untilEnd);
         }
 
-        if (calendarZone is null || string.IsNullOrWhiteSpace(entry.EventText))
+        if (entry.NoteUpdated || calendarZone is null || string.IsNullOrWhiteSpace(entry.EventText))
             return new Range(storedDate, entry.Time, entry.End);
         var walls = Walls(entry.EventText);
         if (walls.Count == 0 || !Converts(walls[0].Label))
@@ -241,14 +249,14 @@ public static class ZoneClock
         TimeOnly? end = entry.End;
         if (walls.Count > 1 && Converts(walls[1].Label))
         {
-            var endCivil = Overnight.ContinuesNextDay(walls[0].Time, walls[1].Time) ? civil.AddDays(1) : civil;
+            var endCivil = SyncClock.EndDate(civil, walls[0].Time, walls[1].Time) ?? civil;
             end = Move(endCivil, walls[1].Time, walls[1].Label, calendarZone).Time;
         }
 
         return new Range(start.Date, start.Time, end);
     }
 
-    private static DateOnly CivilDate(DateOnly stored, Wall wall, TimeOnly? storedTime, TimeZoneInfo zone)
+    public static DateOnly CivilDate(DateOnly stored, Wall wall, TimeOnly? storedTime, TimeZoneInfo zone)
     {
         if (storedTime is not TimeOnly time || time == wall.Time)
             return stored;
@@ -281,7 +289,7 @@ public static class ZoneClock
         return zone.Success ? zone.Groups["zone"].Value : null;
     }
 
-    private static string? SourceId(string? label)
+    public static string? SourceId(string? label)
     {
         if (string.IsNullOrWhiteSpace(label))
             return null;

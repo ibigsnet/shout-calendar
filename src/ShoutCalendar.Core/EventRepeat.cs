@@ -19,6 +19,8 @@ public sealed record EventRepeat(string Kind, DayOfWeek Weekday, int Mask)
 
     public static bool FallsOn(CalendarEntry entry, DateOnly day)
     {
+        if (entry.SeriesDeleted || entry.ExcludedDates?.Contains(day) == true || (entry.RepeatUntil is DateOnly until && day >= until))
+            return false;
         if (entry.Repeat is null)
             return entry.Date == day;
         if (entry.Date is not DateOnly anchor || day < anchor)

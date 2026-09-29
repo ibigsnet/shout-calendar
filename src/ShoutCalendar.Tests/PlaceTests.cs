@@ -102,6 +102,74 @@ public class PlaceTests
     }
 
     [Fact]
+    public void ShiroIsShiroganeAndCrystalIsNotTheTrainingGrounds()
+    {
+        const string text = "Open now-5a EST @ Crystal, Mateus, Shiro, W18, P46";
+        var catalog = new PlaceCatalog(["Crystal Tower Training Grounds", "Limsa Lominsa"]);
+        var eastern = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+        var entry = ShoutHarvest.TryHarvest(
+            text,
+            ShoutHarvest.ShoutChannel,
+            new DateTimeOffset(2026, 9, 29, 0, 30, 0, TimeSpan.FromHours(-4)),
+            catalog,
+            housingHint: "Mist",
+            aggressive: true,
+            zone: eastern);
+
+        Assert.NotNull(entry);
+        Assert.Equal(18, entry.Ward);
+        Assert.Contains("plot 46", entry.Place, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Shirogane", entry.Place, StringComparison.Ordinal);
+        Assert.DoesNotContain("Mist", entry.Place, StringComparison.Ordinal);
+        Assert.DoesNotContain("Limsa", entry.Place, StringComparison.Ordinal);
+        Assert.DoesNotContain("Crystal Tower", entry.Place, StringComparison.Ordinal);
+        Assert.Contains("Mateus", entry.Server, StringComparison.Ordinal);
+        Assert.Contains("Crystal", entry.Server, StringComparison.Ordinal);
+
+        var spot = HousingTravel.Find(entry.Place, text, entry.Ward, entry.Server);
+        Assert.Equal("Shirogane", spot!.Value.District);
+        Assert.Equal(18, spot.Value.Ward);
+        Assert.Equal(46, spot.Value.Plot);
+        Assert.Equal("Kugane", spot.Value.City);
+        Assert.Equal("Mateus", spot.Value.World);
+
+        var named = ShoutHarvest.TryHarvest(
+            "8pm at Crystal Tower Training Grounds",
+            ShoutHarvest.ShoutChannel,
+            ShoutAt,
+            catalog);
+        Assert.NotNull(named);
+        Assert.Contains("Crystal Tower Training Grounds", named.Place, StringComparison.Ordinal);
+
+        var log = new CalendarLog();
+        log.Add(new CalendarEntry(
+            new DateOnly(2026, 9, 29),
+            new TimeOnly(0, 30),
+            new TimeOnly(5, 0),
+            18,
+            "Crystal, Mateus",
+            "ward 18, plot 46, Crystal Tower Training Grounds, Crystal, Mateus, Mist",
+            text,
+            "Faerie Dust",
+            true,
+            "solace",
+            new DateTimeOffset(2026, 9, 29, 4, 30, 0, TimeSpan.Zero),
+            Channel: ShoutHarvest.ShoutChannel));
+        Assert.Equal(1, log.Reharvest(row => ShoutHarvest.TryHarvest(
+            row.EventText,
+            row.Channel,
+            row.DetectedAt,
+            catalog,
+            housingHint: "Mist",
+            aggressive: false,
+            zone: eastern)));
+        var kept = Assert.Single(log.Entries);
+        Assert.Contains("Shirogane", kept.Place, StringComparison.Ordinal);
+        Assert.DoesNotContain("Mist", kept.Place, StringComparison.Ordinal);
+        Assert.DoesNotContain("Crystal Tower", kept.Place, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AShorterNameDoesNotStealTheLongerOne()
     {
         var catalog = new PlaceCatalog(["The Lavender Beds", "Lavender"]);

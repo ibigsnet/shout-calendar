@@ -21,6 +21,7 @@ public static class SyncGate
 
     private static readonly object Gate = new();
     private static SyncBook? panel;
+    private static byte[]? verifiedChallenge;
 
     public static bool IsAttached
     {
@@ -58,11 +59,17 @@ public static class SyncGate
         }
     }
 
-    public static bool AllowRead(byte[]? signature) =>
-        signature is not null && Verify(ChallengeBytes.Span, signature);
+    public static bool AllowRead(byte[]? signature)
+    {
+        if (signature is not { Length: 64 }) return false;
+        lock (Gate)
+            if (verifiedChallenge is not null && signature.AsSpan().SequenceEqual(verifiedChallenge)) return true;
+        if (!Verify(ChallengeBytes.Span, signature)) return false;
+        lock (Gate) verifiedChallenge = signature.ToArray();
+        return true;
+    }
 
-    public static bool AllowWrite(byte[]? signature) =>
-        signature is not null && Verify(ChallengeBytes.Span, signature);
+    public static bool AllowWrite(byte[]? signature) => AllowRead(signature);
 
     public static bool TryAttach(byte[]? signature, SyncBook? book)
     {

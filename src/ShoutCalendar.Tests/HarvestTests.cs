@@ -513,7 +513,7 @@ public class HarvestTests
             ShoutHarvest.FreeCompanyChannel,
             when,
             places,
-            aggressive: true);
+            aggressive: false);
 
         Assert.NotNull(entry);
         Assert.Equal(new TimeOnly(19, 42), entry.Time);
@@ -687,6 +687,7 @@ public class HarvestTests
         Assert.Contains("plot 6", glued.Place, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Lavender", glued.Place, StringComparison.Ordinal);
         Assert.DoesNotContain("Mist", glued.Place, StringComparison.Ordinal);
+        Assert.DoesNotContain("Crystal Tower", glued.Place, StringComparison.Ordinal);
         var spot = HousingTravel.Find(
             "ward 16, plot 6, Company Workshop - Mist, Crystal, Coeurl",
             "Crystal | Coeurl | Lav Beds W16P6",

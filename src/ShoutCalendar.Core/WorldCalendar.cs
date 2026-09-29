@@ -329,6 +329,19 @@ public sealed class WorldCalendar
         return this.IsViewing(canonical);
     }
 
+    public bool PendingVisible(string world, PendingScope scope, string? standing)
+    {
+        if (!PlayableWorlds.TryCanonical(world, out var canonical)) return true;
+        var here = PlayableWorlds.TryCanonical(standing, out var current) && current == canonical;
+        return scope switch
+        {
+            PendingScope.CurrentWorld => here,
+            PendingScope.OpenCalendars => this.IsChecked(canonical) && this.IsViewing(canonical),
+            PendingScope.SyncedWorlds => this.IsChecked(canonical),
+            _ => false,
+        };
+    }
+
     public bool ShowsLocal(CalendarEntry entry)
     {
         if (entry.Manual)

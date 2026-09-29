@@ -43,7 +43,7 @@ public static class SyncStore
         var directory = Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(directory))
             Directory.CreateDirectory(directory);
-        File.WriteAllText(path, book.ToJson());
+        AtomicFile.Write(path, System.Text.Encoding.UTF8.GetBytes(book.ToJson()));
     }
 
     public static bool Load(string path, SyncBook book)

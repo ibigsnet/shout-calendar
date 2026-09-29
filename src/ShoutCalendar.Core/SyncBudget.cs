@@ -5,10 +5,10 @@ public sealed class SyncLimits
 {
     public int MaxConnections { get; set; } = 4;
 
-    /// <summary>Shared invites kept on one pass. Default is about 8 Mb/s.</summary>
+    /// <summary>Download pacing rate and per-pass ingestion byte budget. Default is about 8 Mb/s.</summary>
     public int BytesPerSecond { get; set; } = 1_000_000;
 
-    /// <summary>Own shouts sent on one pass. Default is about 1 Mb/s.</summary>
+    /// <summary>Upload pacing rate and per-pass upload byte budget. Default is about 1 Mb/s.</summary>
     public int UploadBytesPerSecond { get; set; } = 125_000;
 
     public int MaxStoredBytes { get; set; } = 32_000_000;
@@ -41,31 +41,29 @@ public static class SyncBudget
         int openConnections,
         int bytesAlreadyThisSecond,
         int storedBytes,
-        int memoryBytes)
+        int memoryBytes,
+        Func<T, int>? replacedBytes = null)
     {
         var cap = limits.Clamp();
         if (openConnections > cap.MaxConnections)
             return Array.Empty<T>();
 
         var taken = new List<T>();
-        var rate = Math.Max(0, bytesAlreadyThisSecond);
-        var stored = Math.Max(0, storedBytes);
-        var memory = Math.Max(0, memoryBytes);
+        long rate = Math.Max(0, bytesAlreadyThisSecond);
+        long stored = Math.Max(0, storedBytes);
+        long memory = Math.Max(0, memoryBytes);
         foreach (var item in incoming)
         {
             if (taken.Count >= cap.MaxItemsPerTick)
                 break;
             var size = Math.Max(1, bytesOf(item));
-            if (rate + size > cap.BytesPerSecond)
-                break;
-            if (stored + size > cap.MaxStoredBytes)
-                break;
-            if (memory + size > cap.MaxMemoryBytes)
-                break;
+            var growth = size - Math.Max(0, replacedBytes?.Invoke(item) ?? 0);
+            if (rate + size > cap.BytesPerSecond || stored + growth > cap.MaxStoredBytes || memory + growth > cap.MaxMemoryBytes)
+                continue;
             taken.Add(item);
             rate += size;
-            stored += size;
-            memory += size;
+            stored += growth;
+            memory += growth;
         }
 
         return taken;

@@ -20,9 +20,13 @@ public sealed class CalendarLog
     {
         if (entry is null)
             return false;
+        entry = Stamp(entry);
         var when = entry.DetectedAt == default ? DateTimeOffset.UtcNow : entry.DetectedAt;
+        var context = this.entries.Where(row => !row.Manual).Select(row => SyncAnnouncement.FromLocal(row, row.SpeakerWorld)).ToArray();
+        var candidate = SyncAnnouncement.FromLocal(entry, entry.SpeakerWorld);
         var same = this.entries.FindIndex(row =>
             EventIdentity.SameRepost(row, entry)
+            || (!row.Manual && !entry.Manual && SyncMerge.CanMergeAmong(context, SyncAnnouncement.FromLocal(row, row.SpeakerWorld), candidate))
             || EventIdentity.SameEntry(row, entry)
             || EventIdentity.SameSpeaker(row, entry, when));
         if (same >= 0)
@@ -43,11 +47,15 @@ public sealed class CalendarLog
     public int FoldReposts()
     {
         var removed = 0;
+        var context = this.entries.Where(row => !row.Manual).Select(row => SyncAnnouncement.FromLocal(row, row.SpeakerWorld)).ToArray();
         for (var i = 0; i < this.entries.Count; i++)
         {
             for (var j = i + 1; j < this.entries.Count;)
             {
-                if (!EventIdentity.SameRepost(this.entries[i], this.entries[j]))
+                var left = this.entries[i];
+                var right = this.entries[j];
+                if (left.Manual || right.Manual || !(EventIdentity.SameRepost(left, right)
+                    || SyncMerge.CanMergeAmong(context, SyncAnnouncement.FromLocal(left, left.SpeakerWorld), SyncAnnouncement.FromLocal(right, right.SpeakerWorld))))
                 {
                     j++;
                     continue;
@@ -56,6 +64,8 @@ public sealed class CalendarLog
                 this.entries[i] = Merge(this.entries[i], this.entries[j]);
                 this.entries.RemoveAt(j);
                 removed++;
+                context = this.entries.Where(row => !row.Manual).Select(row => SyncAnnouncement.FromLocal(row, row.SpeakerWorld)).ToArray();
+                j = i + 1;
             }
         }
 
@@ -68,12 +78,15 @@ public sealed class CalendarLog
     public int Absorb(IEnumerable<SyncAnnouncement> shared)
     {
         var changed = 0;
-        foreach (var item in shared)
+        var updates = shared.ToArray();
+        var context = updates.Concat(this.entries.Where(row => !row.Manual).Select(row => SyncAnnouncement.FromLocal(row, row.SpeakerWorld))).ToArray();
+        foreach (var item in updates)
         {
             if (string.IsNullOrWhiteSpace(item.Text))
                 continue;
             var incoming = FromShared(item);
-            var index = this.entries.FindIndex(row => EventIdentity.SameRepost(row, incoming));
+            var index = this.entries.FindIndex(row => !row.Manual &&
+                (EventIdentity.SameRepost(row, incoming) || SyncMerge.CanMergeAmong(context, SyncAnnouncement.FromLocal(row, row.SpeakerWorld), item)));
             if (index < 0)
                 continue;
             var merged = Merge(this.entries[index], incoming);
@@ -122,66 +135,39 @@ public sealed class CalendarLog
 
     private static CalendarEntry Merge(CalendarEntry current, CalendarEntry incoming)
     {
-        var text = current.EventText ?? "";
-        var time = current.Time;
-        var end = current.End;
-        if (!current.NoteUpdated)
-        {
-            var currentNow = ZoneClock.TryNowUntil(current.EventText, out _);
-            var incomingNow = ZoneClock.TryNowUntil(incoming.EventText, out _);
-            if (!incomingNow && incoming.Time is not null && ZoneClock.Walls(incoming.EventText).Count > 0)
-            {
-                time = incoming.Time;
-                end = incoming.End ?? (currentNow ? null : end);
-            }
-            else
-            {
-                time ??= incoming.Time;
-                end ??= incoming.End;
-            }
-
-            if (!incomingNow && (currentNow || (incoming.EventText?.Length ?? 0) > text.Length))
-                text = incoming.EventText ?? text;
-
-            if (end is null)
-            {
-                var walls = ZoneClock.Walls(text);
-                if (walls.Count >= 2)
-                    end = walls[1].Time;
-            }
-        }
-
+        var previous = SyncAnnouncement.FromLocal(current, current.SpeakerWorld);
+        var update = SyncAnnouncement.FromLocal(incoming, incoming.SpeakerWorld);
+        // Matching has already been established by the local identity rules.
+        update.Id = previous.Id;
+        previous.ClockEditedLocally = current.NoteUpdated;
+        SyncMerge.PreferBody(previous, update);
+        var wire = update;
+        var clock = SyncClock.Entry(wire);
+        var newer = incoming.DetectedAt > current.DetectedAt || incoming.Revision > current.Revision;
         return current with
         {
-            EventText = text,
-            Date = current.Date ?? incoming.Date,
-            Time = time,
-            End = end,
-            Ward = current.Ward ?? incoming.Ward,
-            Server = string.IsNullOrWhiteSpace(current.Server) ? incoming.Server ?? "" : current.Server,
-            Place = string.IsNullOrWhiteSpace(incoming.Place) ? current.Place : PreferPlace(current.Place, incoming.Place),
-            Sender = string.IsNullOrWhiteSpace(incoming.Sender) ? current.Sender : incoming.Sender,
-            SpeakerWorld = string.IsNullOrWhiteSpace(incoming.SpeakerWorld) ? current.SpeakerWorld : incoming.SpeakerWorld,
+            EventText = current.NoteUpdated ? current.EventText : wire.Text,
+            Date = clock.Date, Time = clock.Time, End = clock.End,
+            StartUtc = clock.StartUtc, EndUtc = clock.EndUtc, SourceTimeZone = clock.SourceTimeZone,
+            Repeat = clock.Repeat ?? current.Repeat,
+            ExcludedDates = incoming.ExcludedDates is { Length: > 0 }
+                ? (current.ExcludedDates ?? []).Concat(incoming.ExcludedDates).Distinct().ToArray() : current.ExcludedDates,
+            SeriesDeleted = current.SeriesDeleted || incoming.SeriesDeleted,
+            RepeatUntil = incoming.RepeatUntil is DateOnly until && (current.RepeatUntil is null || until < current.RepeatUntil)
+                ? until : current.RepeatUntil,
+            Revision = Math.Max(current.Revision, incoming.Revision),
+            Ward = newer ? incoming.Ward ?? current.Ward : current.Ward ?? incoming.Ward,
+            Server = wire.World.Length > 0 ? wire.World : current.Server,
+            Place = current.NoteUpdated ? current.Place : wire.Place,
             Accepted = current.Accepted || incoming.Accepted,
             Pinned = current.Pinned || incoming.Pinned,
-            Channel = current.Channel != 0 ? current.Channel : incoming.Channel,
-            DetectedAt = current.DetectedAt == default ? incoming.DetectedAt : current.DetectedAt,
+            DetectedAt = incoming.DetectedAt > current.DetectedAt ? incoming.DetectedAt : current.DetectedAt,
         };
     }
 
     private static CalendarEntry FromShared(SyncAnnouncement item)
     {
-        DateOnly? date = DateOnly.TryParseExact(item.Date, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var day)
-            ? day
-            : null;
-        TimeOnly? time = TimeOnly.TryParseExact(item.Time, "HH:mm", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var clock)
-            ? clock
-            : null;
-        var walls = ZoneClock.Walls(item.Text);
-        if (time is null && walls.Count > 0)
-            time = walls[0].Time;
-        TimeOnly? end = walls.Count >= 2 ? walls[1].Time : null;
-        return new CalendarEntry(date, time, end, NumberFrom(item.Text), item.World, "", item.Text ?? "", "", false, item.Id, default);
+        return SyncClock.Entry(item) with { Ward = NumberFrom($"{item.Text} {item.Place}") };
     }
 
     private static int? NumberFrom(string? text)
@@ -203,11 +189,37 @@ public sealed class CalendarLog
             return "";
         }
 
+        current = DropDataCenterVenue(current, next);
         var nextDistrict = HousingTravel.DistrictName(next);
         var currentDistrict = HousingTravel.DistrictName(current);
         if (nextDistrict is not null && !nextDistrict.Equals(currentDistrict, StringComparison.OrdinalIgnoreCase))
             return next;
         return next.Length >= current.Length ? next : current;
+    }
+
+    /// <summary>
+    /// A stored place can keep a long venue whose first word is only a data center.
+    /// Drop that piece when the fresh parse no longer has it.
+    /// </summary>
+    private static string DropDataCenterVenue(string current, string next)
+    {
+        var parts = current.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        var kept = new List<string>(parts.Length);
+        foreach (var part in parts)
+        {
+            if (next.Contains(part, StringComparison.OrdinalIgnoreCase))
+            {
+                kept.Add(part);
+                continue;
+            }
+
+            var words = part.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (words.Length >= 3 && DataCenters.IsName(words[0]))
+                continue;
+            kept.Add(part);
+        }
+
+        return string.Join(", ", kept);
     }
 
     public bool Rewrite(string id, CalendarEntry incoming)
@@ -229,44 +241,57 @@ public sealed class CalendarLog
 
     public bool Revise(string id, string note, string dateText, string timeText, string placeText, DateTimeOffset heardAt, PlaceCatalog places, IReadOnlySet<int> channels)
     {
+        var current = this.entries.FirstOrDefault(entry => entry.Id == id);
+        return current is not null && this.TryRevise(id, note, dateText, timeText, placeText, current.Color,
+            heardAt, places, channels, out _);
+    }
+
+    /// <summary>Validate the whole draft before changing any saved fields, including color.</summary>
+    public bool TryRevise(string id, string note, string dateText, string timeText, string placeText, Vector4? color,
+        DateTimeOffset heardAt, PlaceCatalog places, IReadOnlySet<int> channels, out ClockInputErrors errors, TimeZoneInfo? zone = null)
+    {
+        if (!ClockInput.TryParse(dateText, timeText, out var input, out errors)) return false;
         var index = this.entries.FindIndex(entry => entry.Id == id);
         if (index < 0)
+        {
+            errors = new ClockInputErrors(Message: "This invite is no longer available.");
             return false;
-
+        }
+        zone ??= TimeZoneInfo.Local;
         var current = this.entries[index];
-        var parsed = ShoutHarvest.TryHarvest(note, ShoutHarvest.ShoutChannel, heardAt, places, channels);
-        DateOnly? date = parsed?.Date;
-        if (DateOnly.TryParseExact(dateText.Trim(), "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var typedDate))
-            date = typedDate;
-        else if (string.IsNullOrWhiteSpace(dateText))
-            date = parsed?.Date;
-
-        TimeOnly? time = current.Time;
-        TimeOnly? end = current.End;
-        var typedClock = timeText.Trim();
-        if (typedClock.Length == 0)
+        var clockChanged = input != ClockInput.FromEntry(current, zone);
+        var clock = current;
+        if (clockChanged)
         {
-            time = parsed?.Time ?? current.Time;
-            end = parsed?.End ?? current.End;
+            if (!input.ValidateZone(zone, out errors)) return false;
+            clock = current with
+            {
+                Date = input.Date, Time = input.Start, End = input.End,
+                StartUtc = SyncClock.Instant(input.Date, input.Start, zone.Id),
+                EndUtc = SyncClock.Instant(SyncClock.EndDate(input.Date, input.Start, input.End), input.End, zone.Id),
+                SourceTimeZone = input.Start is null ? "" : zone.Id,
+                Repeat = current.Repeat is not null && input.Date is DateOnly anchor
+                    ? current.Repeat with { Weekday = anchor.DayOfWeek } : current.Repeat,
+            };
         }
-        else if (ZoneClock.TryTyped(typedClock, out var start, out var typedEnd))
+        else if (current.StartUtc is null && current.SourceTimeZone.Length == 0 && !current.NoteUpdated && ZoneClock.Labeled(current.EventText))
         {
-            time = start;
-            end = typedEnd;
+            // Freeze a legacy labeled clock using the old note before an unrelated edit changes that note.
+            var canonical = SyncClock.Entry(SyncAnnouncement.FromLocal(current, current.Server ?? "", calendarZone: zone), zone);
+            clock = current with { Date = canonical.Date, Time = canonical.Time, End = canonical.End,
+                StartUtc = canonical.StartUtc, EndUtc = canonical.EndUtc, SourceTimeZone = canonical.SourceTimeZone };
         }
 
-        var place = string.IsNullOrWhiteSpace(placeText) ? parsed?.Place ?? "" : placeText.Trim();
-        var text = string.IsNullOrWhiteSpace(note) ? current.EventText : note.Trim();
-        this.entries[index] = current with
+        var parsed = ShoutHarvest.TryHarvest(note, ShoutHarvest.ShoutChannel, heardAt, places, channels, zone: zone);
+        this.entries[index] = clock with
         {
-            EventText = text,
-            Date = date,
-            Time = time,
-            End = end,
-            Place = place,
+            EventText = string.IsNullOrWhiteSpace(note) ? current.EventText : note.Trim(),
+            Place = string.IsNullOrWhiteSpace(placeText) ? parsed?.Place ?? "" : placeText.Trim(),
             Ward = parsed?.Ward ?? current.Ward,
             Server = parsed?.Server ?? current.Server,
-            NoteUpdated = current.NoteUpdated || !string.Equals(text, current.EventText, StringComparison.Ordinal),
+            Color = color,
+            Revision = Math.Min(int.MaxValue - 1, current.Revision + 1),
+            NoteUpdated = true,
         };
         this.Touch();
         return true;
@@ -278,6 +303,17 @@ public sealed class CalendarLog
         if (index < 0)
             return false;
         this.entries[index] = this.entries[index] with { Color = color };
+        this.Touch();
+        return true;
+    }
+
+    public bool Delete(string id, DateOnly occurrence, DeleteScope scope)
+    {
+        var index = this.entries.FindIndex(entry => entry.Id == id);
+        if (index < 0) return false;
+        var entry = this.entries[index];
+        if (entry.Repeat is null) return this.Remove(id);
+        this.entries[index] = EventDeletion.Apply(entry, occurrence, scope);
         this.Touch();
         return true;
     }
@@ -360,7 +396,7 @@ public sealed class CalendarLog
         if (holdDays < 1)
             holdDays = 1;
         var cutoff = now - TimeSpan.FromDays(holdDays);
-        var removed = this.entries.RemoveAll(entry => !entry.Accepted && entry.DetectedAt < cutoff);
+        var removed = this.entries.RemoveAll(entry => !entry.Accepted && !entry.SeriesDeleted && entry.ExcludedDates is not { Length: > 0 } && entry.RepeatUntil is null && entry.DetectedAt < cutoff);
         if (removed > 0)
             this.Touch();
         return removed;

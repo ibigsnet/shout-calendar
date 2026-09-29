@@ -69,6 +69,11 @@ public sealed class PluginConfig : IPluginConfiguration
 
     public bool AlarmResets { get; set; } = true;
 
+    /// <summary>Null keeps the usual shade. 0 is flat. 2 is usual. 3 is the strongest.</summary>
+    public float? ShadeStrength { get; set; }
+
+    public List<string> InkFlips { get; set; } = new();
+
     public Vector4 PendingColor { get; set; } = new(0.93f, 0.62f, 0.12f, 0.95f);
 
     public Vector4 AcceptedColor { get; set; } = new(0.12f, 0.48f, 0.24f, 0.95f);
@@ -105,6 +110,7 @@ public sealed class PluginConfig : IPluginConfiguration
     public float WeekDetailShare { get; set; } = 0.28f;
 
     public bool ShowAllServers { get; set; }
+    public PendingScope? PendingScope { get; set; }
 
     public bool? PauseInPvp { get; set; }
 
@@ -115,7 +121,15 @@ public sealed class PluginConfig : IPluginConfiguration
     /// <summary>Unset means the faster calendar stays on.</summary>
     public bool? FastCalendar { get; set; }
 
+    public CalendarAppearance? Appearance { get; set; }
+
     public bool ParseDebug { get; set; }
+
+    public bool ParseDebugSound { get; set; }
+
+    public int ParseDebugSoundEffect { get; set; } = 2;
+
+    public string ParseDebugSoundFile { get; set; } = "";
 
     public bool? WeekView { get; set; }
 
@@ -154,6 +168,14 @@ public sealed class StoredEvent
     public string Time { get; set; } = "";
 
     public string? End { get; set; }
+
+    public DateTimeOffset? StartUtc { get; set; }
+    public DateTimeOffset? EndUtc { get; set; }
+    public string SourceTimeZone { get; set; } = "";
+    public int Revision { get; set; } = 1;
+    public string[] ExcludedDates { get; set; } = [];
+    public string? RepeatUntil { get; set; }
+    public bool SeriesDeleted { get; set; }
 
     public int? Ward { get; set; }
 
@@ -200,6 +222,12 @@ public sealed class StoredEvent
             Date = entry.Date?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "",
             Time = entry.Time?.ToString("HH:mm", CultureInfo.InvariantCulture) ?? "",
             End = entry.End?.ToString("HH:mm", CultureInfo.InvariantCulture),
+            StartUtc = entry.StartUtc,
+            EndUtc = entry.EndUtc,
+            SourceTimeZone = entry.SourceTimeZone,
+            Revision = entry.Revision,
+            ExcludedDates = (entry.ExcludedDates ?? []).Select(day => day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)).ToArray(),
+            RepeatUntil = entry.RepeatUntil?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), SeriesDeleted = entry.SeriesDeleted,
             Ward = entry.Ward,
             Server = entry.Server,
             Place = entry.Place,
@@ -272,7 +300,16 @@ public sealed class StoredEvent
                 ? null
                 : new Vector4(stored.ColorR ?? 0f, stored.ColorG ?? 0f, stored.ColorB ?? 0f, stored.ColorA.Value),
             stored.Hidden,
-            stored.Pinned);
+            stored.Pinned,
+            stored.StartUtc,
+            stored.EndUtc,
+            stored.SourceTimeZone ?? "",
+            Math.Clamp(stored.Revision, 1, int.MaxValue - 1),
+            stored.ExcludedDates is { Length: > 0 } ? stored.ExcludedDates
+                .Select(text => DateOnly.TryParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day) ? (DateOnly?)day : null)
+                .Where(day => day.HasValue).Select(day => day!.Value).Distinct().ToArray() : null,
+            DateOnly.TryParseExact(stored.RepeatUntil, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var until) ? until : null,
+            stored.SeriesDeleted);
         return true;
     }
 }

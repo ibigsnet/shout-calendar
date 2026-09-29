@@ -60,10 +60,11 @@ public sealed class Plugin : IDalamudPlugin
     private ICallGateProvider<byte[], int, string, string>? syncIngest;
     private ICallGateProvider<byte[], string>? syncRead;
     private ICallGateProvider<byte[], string, bool>? syncApply;
+    private ICallGateProvider<byte[], string, bool>? syncStatus;
+    private ICallGateProvider<byte[], int, string, string>? syncIngestV2;
     private ICallGateProvider<bool>? openCalendar;
     private readonly CancellationTokenSource relayCancel = new();
     private Task? relayWatch;
-    private string relaySeen = "";
 
     public Plugin()
     {
@@ -108,6 +109,12 @@ public sealed class Plugin : IDalamudPlugin
         this.session.ResetSoundFile = this.config.ResetSoundFile ?? "";
         this.session.AlarmResets = this.config.AlarmResets;
         this.session.PendingColor = Shown(this.config.PendingColor, new Vector4(0.93f, 0.62f, 0.12f, 0.95f));
+        this.session.ShadeStrength = Math.Clamp(this.config.ShadeStrength ?? 0f, 0f, 3f);
+        foreach (var key in this.config.InkFlips ?? [])
+        {
+            if (!string.IsNullOrWhiteSpace(key))
+                this.session.InkFlips.Add(key);
+        }
         this.session.AcceptedColor = Shown(this.config.AcceptedColor, new Vector4(0.12f, 0.48f, 0.24f, 0.95f));
         this.session.TodayColor = Shown(this.config.TodayColor, new Vector4(1f, 1f, 1f, 0.19f));
         this.session.OutsideColor = Shown(this.config.OutsideColor, new Vector4(0.22f, 0.22f, 0.24f, 0.427f));
@@ -127,10 +134,17 @@ public sealed class Plugin : IDalamudPlugin
             ? this.config.WeekDetailShare
             : 0.28f;
         this.session.ShowAllServers = this.config.ShowAllServers;
+        this.session.PendingScope = this.config.PendingScope ?? (this.config.ShowAllServers ? PendingScope.OpenCalendars : PendingScope.CurrentWorld);
         this.session.PauseInPvp = this.config.PauseInPvp ?? true;
         this.session.ShowResets = this.config.ShowResets ?? true;
         this.session.LightCalendar = this.config.FastCalendar ?? true;
+        this.session.Appearance = this.config.Appearance ?? CalendarAppearance.Migrate(this.config.ShadeStrength, this.config.InkFlips);
+        this.session.Appearance.Normalize();
         this.session.ParseDebug = this.config.ParseDebug;
+        this.session.ParseDebugSound = this.config.ParseDebugSound;
+        var debugSound = this.config.ParseDebugSoundEffect;
+        this.session.ParseDebugSoundEffect = debugSound == 0 ? 2 : EventAlarm.ClampSound(debugSound);
+        this.session.ParseDebugSoundFile = this.config.ParseDebugSoundFile ?? "";
         this.session.WeekView = this.config.WeekView;
         this.session.SyncPendingColor = Shown(this.config.SyncPendingColor, new Vector4(0.63f, 0.28f, 0.72f, 0.95f));
         this.session.SharedBarColor = Shown(this.config.SharedBarColor, new Vector4(0.95f, 0.05f, 0.05f, 1f));
@@ -188,12 +202,9 @@ public sealed class Plugin : IDalamudPlugin
         this.relayCancel.Cancel();
         try
         {
-            this.relayWatch?.Wait(TimeSpan.FromSeconds(1));
+            this.relayWatch?.GetAwaiter().GetResult();
         }
-        catch (AggregateException)
-        {
-            // The status check is stopping.
-        }
+        catch (OperationCanceledException) { }
 
         this.relayCancel.Dispose();
         this.UnregisterSyncHook();
@@ -241,8 +252,13 @@ public sealed class Plugin : IDalamudPlugin
 
     private bool PausedForPvp() => this.session.PauseInPvp && ClientState.IsPvPExcludingDen;
 
+    private long nextCalendarTick;
+
     private void OnFramework(IFramework framework)
     {
+        // Alarm clocks have minute precision; world tracking, cleanup and acceptance notices need no per-frame scan.
+        if (Environment.TickCount64 < this.nextCalendarTick) return;
+        this.nextCalendarTick = Environment.TickCount64 + 1000;
         if (this.PausedForPvp())
             return;
         var standing = this.DetectedWorld("");
@@ -259,8 +275,11 @@ public sealed class Plugin : IDalamudPlugin
                 this.Save();
         }
 
+        var alarmEntries = this.session.Log.Entries.Where(entry => !entry.Hidden && this.session.ShowsChannel(entry.Channel)).Concat(
+            (this.syncBook?.CopyEvents() ?? []).Where(item => item.FromSync && !item.Hidden && !item.Declined && this.session.ShowsChannel(item.Channel))
+            .Select(item => SyncClock.Entry(item) with { Id = "sync:" + item.Id })).ToArray();
         var hits = EventAlarm.Due(
-            this.session.Log.Entries,
+            alarmEntries,
             now,
             this.alarmMinute,
             this.session.AlarmAccepted,
@@ -270,7 +289,7 @@ public sealed class Plugin : IDalamudPlugin
         if (this.session.AlarmAtStart && this.session.AlarmMinutesBefore > 0)
         {
             var starting = EventAlarm.Due(
-                this.session.Log.Entries,
+                alarmEntries,
                 now,
                 this.alarmMinute,
                 this.session.AlarmAccepted,
@@ -280,6 +299,12 @@ public sealed class Plugin : IDalamudPlugin
             if (starting.Count > 0)
                 hits = hits.Concat(starting.Select(hit => hit with { AtStart = true })).ToList();
         }
+
+        hits = hits.Where(hit =>
+        {
+            var entry = this.session.Log.Entries.FirstOrDefault(candidate => candidate.Id == hit.Id);
+            return entry is null || this.session.ShowsChannel(entry.Channel);
+        }).ToList();
         if (this.session.AlarmResets && this.session.ShowResets)
         {
             var resets = GameSchedule.Due(
@@ -304,7 +329,7 @@ public sealed class Plugin : IDalamudPlugin
         var rings = new List<AlarmNotice.Ring>();
         foreach (var hit in hits)
         {
-            var entry = this.session.Log.Entries.FirstOrDefault(candidate => candidate.Id == hit.Id);
+            var entry = alarmEntries.FirstOrDefault(candidate => candidate.Id == hit.Id);
             if (entry is null)
                 continue;
             var lead = hit.AtStart ? 0 : this.session.AlarmMinutesBefore;
@@ -358,13 +383,7 @@ public sealed class Plugin : IDalamudPlugin
             {
                 if (!item.Accepted || string.IsNullOrEmpty(item.Id))
                     continue;
-                if (!DateOnly.TryParseExact(item.Date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day))
-                    continue;
-                if (!TimeOnly.TryParseExact(item.Time, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var time))
-                    continue;
-                Consider(
-                    new CalendarEntry(day, time, null, null, item.World, "", item.Text, "", true, item.Id, default),
-                    "sync:" + item.Id);
+                Consider(SyncClock.Entry(item) with { Id = "sync:" + item.Id }, "sync:" + item.Id);
             }
         }
 
@@ -1134,7 +1153,11 @@ public sealed class Plugin : IDalamudPlugin
 
         this.Save();
         if (this.session.ParseDebug)
+        {
             ChatGui.Print(ParseDebug.Line(kept));
+            if (this.session.ParseDebugSound)
+                this.PlayAlarm(this.session.ParseDebugSoundEffect, this.session.ParseDebugSoundFile);
+        }
     }
 
     internal static unsafe bool AskTell(string command)
@@ -1269,6 +1292,8 @@ public sealed class Plugin : IDalamudPlugin
         this.config.ResetSoundFile = this.session.ResetSoundFile ?? "";
         this.config.AlarmResets = this.session.AlarmResets;
         this.config.PendingColor = this.session.PendingColor;
+        this.config.ShadeStrength = this.session.ShadeStrength;
+        this.config.InkFlips = this.session.InkFlips.Order(StringComparer.Ordinal).ToList();
         this.config.AcceptedColor = this.session.AcceptedColor;
         this.config.TodayColor = this.session.TodayColor;
         this.config.OutsideColor = this.session.OutsideColor;
@@ -1285,11 +1310,16 @@ public sealed class Plugin : IDalamudPlugin
         this.config.ShowHidden = this.session.ShowHidden;
         this.config.NewestFirst = this.session.NewestFirst;
         this.config.WeekDetailShare = this.session.WeekDetailShare;
-        this.config.ShowAllServers = this.session.ShowAllServers;
+        this.config.ShowAllServers = this.session.PendingScope != PendingScope.CurrentWorld;
+        this.config.PendingScope = this.session.PendingScope;
         this.config.PauseInPvp = this.session.PauseInPvp;
         this.config.ShowResets = this.session.ShowResets;
         this.config.FastCalendar = this.session.LightCalendar;
+        this.config.Appearance = this.session.Appearance;
         this.config.ParseDebug = this.session.ParseDebug;
+        this.config.ParseDebugSound = this.session.ParseDebugSound;
+        this.config.ParseDebugSoundEffect = EventAlarm.ClampSound(this.session.ParseDebugSoundEffect);
+        this.config.ParseDebugSoundFile = this.session.ParseDebugSoundFile ?? "";
         this.config.WeekView = this.session.WeekView;
         this.config.PinnedSync = this.session.PinnedSync.Order(StringComparer.Ordinal).ToList();
         this.config.SyncPendingColor = this.session.SyncPendingColor;
@@ -1413,6 +1443,10 @@ public sealed class Plugin : IDalamudPlugin
             this.syncRead.RegisterFunc(this.OnSyncRead);
             this.syncApply = PluginInterface.GetIpcProvider<byte[], string, bool>("ShoutCalendar.Sync.Apply");
             this.syncApply.RegisterFunc(this.OnSyncApply);
+            this.syncStatus = PluginInterface.GetIpcProvider<byte[], string, bool>("ShoutCalendar.Sync.Status");
+            this.syncStatus.RegisterFunc(this.OnSyncStatus);
+            this.syncIngestV2 = PluginInterface.GetIpcProvider<byte[], int, string, string>("ShoutCalendar.Sync.IngestV2");
+            this.syncIngestV2.RegisterFunc(this.OnSyncIngestV2);
             this.openCalendar = PluginInterface.GetIpcProvider<bool>("ShoutCalendar.Open");
             this.openCalendar.RegisterFunc(this.OnOpenCalendar);
         }
@@ -1430,26 +1464,37 @@ public sealed class Plugin : IDalamudPlugin
         this.syncIngest?.UnregisterFunc();
         this.syncRead?.UnregisterFunc();
         this.syncApply?.UnregisterFunc();
+        this.syncStatus?.UnregisterFunc();
+        this.syncIngestV2?.UnregisterFunc();
         this.openCalendar?.UnregisterFunc();
         this.syncBook?.Detach();
         SyncGate.Detach();
     }
 
+    private byte[]? syncAttachment;
+
     private bool OnSyncAttach(byte[] signature, string world)
     {
+        if (!Framework.IsInFrameworkUpdateThread) return false;
         if (this.PausedForPvp() || !SyncGate.AllowWrite(signature))
             return false;
         var home = this.DetectedWorld(world);
         if (!PlayableWorlds.TryCanonical(home, out var canonical))
             return false;
         this.syncBook ??= new SyncBook(canonical);
-        return SyncGate.TryAttach(signature, this.syncBook);
+        if (!SyncGate.TryAttach(signature, this.syncBook)) return false;
+        this.syncAttachment = signature.ToArray();
+        return true;
     }
 
     private bool OnSyncDetach(byte[] signature)
     {
+        if (!Framework.IsInFrameworkUpdateThread) return false;
         if (!SyncGate.AllowWrite(signature))
             return false;
+        // A delayed unload callback from an older Sync instance must not detach its replacement.
+        if (this.syncAttachment is null || !signature.AsSpan().SequenceEqual(this.syncAttachment)) return false;
+        this.syncAttachment = null;
         this.syncBook?.Detach();
         SyncGate.Detach();
         return true;
@@ -1479,6 +1524,7 @@ public sealed class Plugin : IDalamudPlugin
 
     private string OnSyncPull(byte[] signature)
     {
+        if (!Framework.IsInFrameworkUpdateThread) return "";
         if (this.PausedForPvp() || !SyncGate.AllowRead(signature) || this.syncBook is null)
             return "";
         var rows = SyncExport.FromLocal(this.syncBook, this.session.Log.Entries, this.session.Places, PluginVersion());
@@ -1491,49 +1537,42 @@ public sealed class Plugin : IDalamudPlugin
         {
             try
             {
-                this.ProbeRelay();
+                var snapshot = await Framework.RunOnTick(() =>
+                {
+                    token.ThrowIfCancellationRequested();
+                    var book = this.syncBook;
+                    if (book is null || !SyncGate.IsAttached || this.PausedForPvp()) return null;
+                    return new RelayProbe(book.BookId, book.RelayHost, book.RelayPort,
+                        book.DistinctBackup is { } backup && SyncRelays.IsPublic(backup.Host, backup.Port));
+                }, cancellationToken: token).WaitAsync(token);
+                if (snapshot is { Port: > 0 } && !string.IsNullOrWhiteSpace(snapshot.Host))
+                {
+                    var status = await RelayReach.ReadAsync(snapshot.Host, snapshot.Port, snapshot.Mirror, token);
+                    await Framework.RunOnTick(() =>
+                    {
+                        token.ThrowIfCancellationRequested();
+                        var book = this.syncBook;
+                        if (book?.BookId == snapshot.BookId && book.RelayHost == snapshot.Host && book.RelayPort == snapshot.Port)
+                            book.RelayStatus = status;
+                    }, cancellationToken: token).WaitAsync(token);
+                }
+                await Task.Delay(TimeSpan.FromSeconds(10 + Random.Shared.NextDouble() * 2), token);
             }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { return; }
             catch (Exception exception)
             {
-                Log.Debug(exception, "Relay status was not updated.");
-            }
-
-            try
-            {
-                await Task.Delay(TimeSpan.FromSeconds(10), token);
-            }
-            catch (OperationCanceledException)
-            {
-                return;
+                Log.Debug("Relay status was not updated ({FailureType}).", exception.GetType().Name);
+                try { await Task.Delay(TimeSpan.FromSeconds(20), token); }
+                catch (OperationCanceledException) { return; }
             }
         }
     }
 
-    private void ProbeRelay()
-    {
-        var book = this.syncBook;
-        if (book is null || !SyncGate.IsAttached || this.PausedForPvp())
-            return;
-        var host = book.RelayHost ?? "";
-        var port = book.RelayPort;
-        var key = string.Create(CultureInfo.InvariantCulture, $"{host}\n{port}\n{book.MirrorRelay}");
-        if (!string.Equals(key, this.relaySeen, StringComparison.Ordinal))
-        {
-            this.relaySeen = key;
-            book.RelayStatus = port < 1 || string.IsNullOrWhiteSpace(host) ? "" : RelayReach.Resolving;
-        }
-
-        if (port < 1 || string.IsNullOrWhiteSpace(host))
-            return;
-        var status = RelayReach.Read(host, port, book.MirrorRelay);
-        if (this.syncBook is SyncBook current
-            && string.Equals(current.RelayHost, host, StringComparison.Ordinal)
-            && current.RelayPort == port)
-            current.RelayStatus = status;
-    }
+    private sealed record RelayProbe(string BookId, string Host, int Port, bool Mirror);
 
     private string OnSyncIngest(byte[] signature, int openConnections, string json)
     {
+        if (!Framework.IsInFrameworkUpdateThread) return RelayProtocol.Denied;
         if (this.PausedForPvp())
             return "0";
         if (!SyncGate.AllowWrite(signature) || this.syncBook is null)
@@ -1542,13 +1581,16 @@ public sealed class Plugin : IDalamudPlugin
         var added = this.syncBook.Ingest(signature, rows, openConnections, this.session.Places);
         if (added < 0)
             return RelayProtocol.Denied;
+        if (this.session.Log.Absorb(this.syncBook.CopyEvents()) > 0) this.Save();
         return added.ToString(CultureInfo.InvariantCulture);
     }
 
     private string OnSyncRead(byte[] signature)
     {
+        if (!Framework.IsInFrameworkUpdateThread) return "";
         if (!SyncGate.AllowRead(signature) || this.syncBook is null)
             return "";
+        this.syncBook.ForceShare();
         return this.syncBook.ToJson();
     }
 
@@ -1558,11 +1600,29 @@ public sealed class Plugin : IDalamudPlugin
         return true;
     }
 
+    private bool OnSyncStatus(byte[] signature, string json)
+    {
+        if (!Framework.IsInFrameworkUpdateThread || !SyncGate.AllowWrite(signature) || this.syncBook is null) return false;
+        var update = System.Text.Json.JsonSerializer.Deserialize<SyncStatusUpdate>(json);
+        if (update is null) return false;
+        if (update.ResetDismissed) this.syncBook.PrepareDebugResync();
+        this.syncBook.PublishStatus(update.Status, update.PerformanceLine, update.Progress);
+        return true;
+    }
+
+    private string OnSyncIngestV2(byte[] signature, int openConnections, string json)
+    {
+        var added = this.OnSyncIngest(signature, openConnections, json);
+        if (!int.TryParse(added, out var count)) return added;
+        return System.Text.Json.JsonSerializer.Serialize(new SyncIngestReply(count, this.syncBook?.LastFill));
+    }
+
     private bool OnSyncApply(byte[] signature, string json)
     {
+        if (!Framework.IsInFrameworkUpdateThread) return false;
         if (!SyncGate.AllowWrite(signature) || this.syncBook is null)
             return false;
-        if (!this.syncBook.ApplyJson(json))
+        if (!this.syncBook.RestoreIfEmpty(json))
             return false;
         if (this.session.Log.Absorb(this.syncBook.CopyEvents()) > 0)
             this.Save();

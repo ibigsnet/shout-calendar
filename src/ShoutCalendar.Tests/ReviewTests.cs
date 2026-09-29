@@ -351,6 +351,14 @@ public class ReviewTests
         Assert.DoesNotContain(10, session.Channels);
         Assert.DoesNotContain(14, session.Channels);
         Assert.Contains(ShoutHarvest.ShoutChannel, session.Channels);
+        session.SetChannel(ShoutHarvest.ShoutChannel, false);
+        Assert.False(session.ShowsChannel(ShoutHarvest.ShoutChannel));
+        Assert.True(session.ShowsChannel(0));
+        Assert.True(session.ShowsChannel(SharePolicy.YellChannel));
+        session.SetInkFlip("Pending", true);
+        Assert.True(session.InkFlipped("Pending"));
+        session.SetInkFlip("Pending", false);
+        Assert.False(session.InkFlipped("Pending"));
     }
 
     [Fact]

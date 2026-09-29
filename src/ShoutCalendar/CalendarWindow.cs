@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.ImGuiFileDialog;
@@ -7,7 +8,7 @@ using ShoutCalendar.Core;
 
 namespace ShoutCalendar;
 
-public sealed class CalendarWindow : Window
+public sealed partial class CalendarWindow : Window
 {
     private readonly CalendarSession session;
     private readonly ClearPrompt prompt;
@@ -20,6 +21,7 @@ public sealed class CalendarWindow : Window
     private readonly Action? openMacroHelper;
     private readonly FileDialogManager dialogs;
     private DateTimeOffset? syncLimitTipAt;
+    private readonly SyncStatusBuffer syncStatusBuffer = new();
     private string syncLimitTipKey = "";
     private string? selectedId;
     private string? editingId;
@@ -27,6 +29,8 @@ public sealed class CalendarWindow : Window
     private string editDate = "";
     private string editTime = "";
     private string editPlace = "";
+    private ClockInputErrors editErrors;
+    private ClockInputErrors fixErrors;
     private string fixId = "";
     private string fixDate = "";
     private string fixTime = "";
@@ -81,7 +85,7 @@ public sealed class CalendarWindow : Window
     {
         this.session = session;
         this.prompt = prompt;
-        this.save = save;
+        this.save = () => { this.nextSnapshot = 0; this.glanceKey = ""; save(); };
         this.previewSound = previewSound;
         this.dialogs = dialogs;
         this.openPin = openPin;
@@ -104,26 +108,38 @@ public sealed class CalendarWindow : Window
             return;
         }
 
+        var drawStart = System.Diagnostics.Stopwatch.GetTimestamp();
+        this.UpdateCompactMode();
         this.BeginDraw();
         this.UseTextScale();
         this.DrawTopBar();
-        this.DrawHistory();
-        ImGui.SameLine();
+        if (!this.CompactMode || this.compactSidebar)
+        {
+            this.DrawHistory();
+            ImGui.SameLine();
+        }
         this.DrawCalendar();
         this.DrawDayFolder();
         this.DrawClearPrompt();
         this.DrawLinkPrompt();
         this.dialogs.Draw();
+        if (this.appearanceChanged) { this.appearanceChanged = false; this.save(); }
+        var drawMs = System.Diagnostics.Stopwatch.GetElapsedTime(drawStart).TotalMilliseconds;
+        this.drawAverageMs = this.drawAverageMs == 0 ? drawMs : this.drawAverageMs * 0.95 + drawMs * 0.05;
+        this.drawPeakMs = Math.Max(this.drawPeakMs, drawMs);
     }
 
     private void DrawHistory()
     {
-        ImGui.BeginChild("shout-history", new Vector2(340, 0), true);
+        ImGui.BeginChild("shout-history", new Vector2(this.CompactMode ? 290 : 340, 0), true);
         this.UseTextScale();
-        if (this.session.Log.ExpireUnaccepted(DateTimeOffset.UtcNow, this.session.UnacceptedHoldDays) > 0)
-            this.save();
+        if (Environment.TickCount64 >= this.nextExpiry)
+        {
+            this.nextExpiry = Environment.TickCount64 + 1000;
+            if (this.session.Log.ExpireUnaccepted(DateTimeOffset.UtcNow, this.session.UnacceptedHoldDays) > 0) this.save();
+        }
 
-        if (ImGui.BeginTabBar("shout-tabs"))
+        if (ImGui.BeginTabBar("shout-tabs", ImGuiTabBarFlags.FittingPolicyScroll))
         {
             if (ImGui.BeginTabItem("Pending"))
             {
@@ -143,9 +159,9 @@ public sealed class CalendarWindow : Window
                 ImGui.EndTabItem();
             }
 
-            if (ImGui.BeginTabItem("Colors"))
+            if (ImGui.BeginTabItem("Appearance"))
             {
-                this.DrawColors();
+                this.DrawAppearance();
                 ImGui.EndTabItem();
             }
 
@@ -205,15 +221,7 @@ public sealed class CalendarWindow : Window
         ImGui.SetNextItemOpen(true, ImGuiCond.Once);
         if (!ImGui.CollapsingHeader("Performance##calendar-performance"))
             return;
-        var fast = this.session.LightCalendar;
-        if (ImGui.Checkbox("Faster calendar##fast-calendar", ref fast))
-        {
-            this.session.LightCalendar = fast;
-            this.ApplyWindowSize();
-            this.save();
-        }
-
-        ImGui.TextWrapped("Draws each day in place and clips the chip text. Hover shows the title. A click opens the invite.");
+        ImGui.TextWrapped("Grid style, compact mode and draw timing are in Appearance.");
         var parseDebug = this.session.ParseDebug;
         if (ImGui.Checkbox("Parse debug##parse-debug", ref parseDebug))
         {
@@ -222,6 +230,16 @@ public sealed class CalendarWindow : Window
         }
 
         ImGui.TextWrapped("Prints Shout Calendar: [Debug] in chat when a shout is kept. No line means that message was not parsed.");
+        this.DrawAlarmChoice(
+            "Debug sound##parse-debug-sound",
+            this.session.ParseDebugSound,
+            value => this.session.ParseDebugSound = value,
+            "Debug <se.#>##parse-debug-se",
+            this.session.ParseDebugSoundEffect,
+            sound => this.session.ParseDebugSoundEffect = sound,
+            this.session.ParseDebugSoundFile,
+            file => this.session.ParseDebugSoundFile = file,
+            "parse-debug");
     }
 
     private void AskFeedback(string url, string caption)
@@ -255,26 +273,19 @@ public sealed class CalendarWindow : Window
         ImGui.SameLine();
         if (ImGui.Button("Unhide all##pending-unhide-all"))
             this.HidePending(false);
-        var showAll = this.session.ShowAllServers;
-        if (ImGui.Checkbox("Show all servers##pending-all-servers", ref showAll))
+        if (SyncGate.Panel is not null)
         {
-            this.session.ShowAllServers = showAll;
-            this.save();
+            if (this.AppearanceChoice("Pending from", (int)this.session.PendingScope,
+                ["Current world", "Open calendars", "All synced worlds"], out var scope))
+            {
+                this.session.PendingScope = (PendingScope)scope;
+                this.session.ShowAllServers = scope != 0;
+            }
+            ImGui.TextWrapped("Uses the advertised destination when known. Sync > Servers controls downloads; the calendar selector controls the grid.");
         }
-
-        ImGui.SameLine();
         var newest = this.session.NewestFirst;
         if (ImGui.Checkbox("Newest first##pending-newest", ref newest))
-        {
-            this.session.NewestFirst = newest;
-            this.save();
-        }
-        if (PlayableWorlds.TryCanonical(this.StandingWorld(), out var only))
-        {
-            ImGui.TextDisabled(this.session.ShowAllServers
-                ? $"Pending invites follow the open calendars, and only servers turned on in Sync. You are on {only}."
-                : $"Pending invites are limited to {only}. Show all servers adds the other open calendars turned on in Sync.");
-        }
+        { this.session.NewestFirst = newest; this.save(); }
         if (this.session.NewestFirst)
             ImGui.TextDisabled("Newest first keeps moving the rows while shouts are still coming in.");
 
@@ -288,13 +299,12 @@ public sealed class CalendarWindow : Window
         ImGui.Separator();
         this.DrawAddEvent();
 
-        var pending = this.session.Log.Entries.Where(entry => !entry.Accepted && this.IncludeLocal(entry)).ToList();
+        var pending = this.session.Log.Entries.Where(entry => !entry.Accepted && this.IncludeLocal(entry, pendingList: true)).ToList();
         if (this.session.NewestFirst)
             pending.Reverse();
-        foreach (var entry in pending)
-            this.DrawPendingRow(entry);
-
-        this.DrawSharedPending();
+        if (this.session.Appearance.Lists == InviteListStyle.Tree)
+            this.DrawPendingTree(pending, this.SharedPendingRows());
+        else this.DrawPendingPages(pending, this.SharedPendingRows());
     }
 
     private void HidePending(bool hidden)
@@ -306,36 +316,19 @@ public sealed class CalendarWindow : Window
             this.save();
     }
 
-    private void DrawSharedPending()
+    private IEnumerable<SyncAnnouncement> SharedPendingRows()
     {
-        if (SyncGate.Panel is not SyncBook book)
-            return;
-
-        if (!this.session.ShowSyncUnaccepted && !this.session.ShowHidden)
-            return;
+        if (SyncGate.Panel is not SyncBook book || (!this.session.ShowSyncUnaccepted && !this.session.ShowHidden)) return [];
         var rows = this.syncFrame
             .Where(item => item.Accepted ? this.OnViewedWorld(book, item) : this.PendingOnThisCalendar(book, item))
             .Where(item => item.IsSyncPending || (this.session.ShowHidden && item.Hidden && !item.Declined && !item.Accepted))
-            .Where(item => item.Accepted || this.ShowsPendingWorld(item.Text, item.World))
-            .ToList();
-        if (this.session.NewestFirst)
-            rows.Reverse();
-        if (rows.Count == 0 && book.Informedaholic)
-            return;
-        this.DrawSharedBanner(book);
-        if (rows.Count == 0)
-        {
-            ImGui.TextDisabled("No shared invites are waiting.");
-            return;
-        }
-
-        foreach (var item in rows)
-            this.DrawSharedRow(item);
+            .Where(item => item.Accepted || this.ShowsPendingWorld(item.Text, item.World));
+        return this.session.NewestFirst ? rows.Reverse() : rows;
     }
 
     private void DrawSharedBanner(SyncBook book)
     {
-        var label = DataCenters.SharedOn(book.Worlds.Viewing());
+        var label = DataCenters.SharedOn(book.Worlds.Viewing()).Replace("Shared on", "Viewing calendars:", StringComparison.Ordinal) + " · details";
         var width = MathF.Max(1f, ImGui.GetContentRegionAvail().X);
         var size = ImGui.CalcTextSize(label, false, MathF.Max(1f, width - 8f));
         var pos = ImGui.GetCursorScreenPos();
@@ -345,21 +338,27 @@ public sealed class CalendarWindow : Window
             pos + new Vector2(width, height),
             ImGui.ColorConvertFloat4ToU32(this.session.SharedBarColor));
         ImGui.SetCursorScreenPos(pos + new Vector2(4f, 4f));
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 1f, 1f, 1f));
+        ImGui.PushStyleColor(ImGuiCol.Text, this.session.Appearance.Ink("Shared bar", this.session.SharedBarColor));
         ImGui.PushTextWrapPos(pos.X + width - 4f);
         ImGui.TextWrapped(label);
         ImGui.PopTextWrapPos();
         ImGui.PopStyleColor();
+        if (ImGui.IsMouseHoveringRect(pos, pos + new Vector2(width, height)))
+        {
+            ImGui.SetTooltip("Selected calendars. Click for event counts by destination.");
+            if (ImGui.IsMouseClicked(ImGuiMouseButton.Left)) this.serverDetails = !this.serverDetails;
+        }
         ImGui.SetCursorScreenPos(new Vector2(pos.X, pos.Y + height + 2f));
+        if (this.serverDetails) ImGui.TextWrapped(this.VisibleServerCounts());
     }
 
     private void DrawPendingRow(CalendarEntry entry)
     {
         if (!this.MatchesSearch(entry.EventText, entry.Sender, entry.Place, entry.Server, entry.SpeakerWorld))
             return;
-        var title = EventTitle.Readable(EventTitle.Choose(entry.EventText));
+        var title = this.TitleOf(entry.EventText);
         var who = string.IsNullOrWhiteSpace(entry.Sender) ? "" : entry.Sender;
-        var rowLabel = title.Length > 0 ? title : who.Length > 0 ? who : "Invite";
+        var rowLabel = (LiveInvite.IsRecent(entry.EventText, entry.DetectedAt, DateTimeOffset.UtcNow) ? "Now · " : "") + (title.Length > 0 ? title : who.Length > 0 ? who : "Invite");
         if (ImGui.Selectable($"{rowLabel}##{entry.Id}", this.selectedId == entry.Id))
         {
             this.selectedId = entry.Id;
@@ -375,10 +374,11 @@ public sealed class CalendarWindow : Window
     {
         if (!this.MatchesSearch(item.Text, item.World, item.Date, item.Time))
             return;
-        var title = EventTitle.Readable(EventTitle.Choose(item.Text));
+        var title = item.Title.Length > 0 ? item.Title : this.TitleOf(item.Text);
         var heading = title.Length > 0 ? title : item.World;
-        var when = string.IsNullOrWhiteSpace(item.Time) ? "" : item.Time.Trim();
-        var day = string.IsNullOrWhiteSpace(item.Date) ? "" : item.Date;
+        var shownClock = ZoneClock.ShownRange(SyncClock.Entry(item), TimeZoneInfo.Local);
+        var when = shownClock.Start?.ToString("HH:mm", CultureInfo.InvariantCulture) ?? "";
+        var day = string.IsNullOrWhiteSpace(item.Date) ? "" : shownClock.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         if (ImGui.Selectable($"{heading}##sync-pick-{item.Id}", this.selectedLine?.SyncId == item.Id))
         {
             TimeOnly? clock = TimeOnly.TryParseExact(when, "HH:mm", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var parsed)
@@ -389,12 +389,15 @@ public sealed class CalendarWindow : Window
                 this.session.Show(shown);
         }
 
-        var facts = string.Join(" · ", new[] { item.World, day, when }.Where(part => part.Length > 0));
+        var summary = this.SharedEntry(item);
+        var facts = PendingFacts(summary);
         this.DrawPendingFacts(item.Text, facts);
     }
 
     private void DrawPendingFacts(string? text, string facts)
     {
+        var preview = InviteSummary.Preview(text);
+        if (preview.Length > 0 && preview != InviteSummary.Title(text)) ImGui.TextWrapped(preview);
         if (EventKind.Find(text) is EventKind kind)
         {
             ImGui.TextColored(this.KindFill(kind), kind.Name);
@@ -407,11 +410,12 @@ public sealed class CalendarWindow : Window
 
     private static string PendingFacts(CalendarEntry entry)
     {
-        var day = entry.Date?.ToString("yyyy-MM-dd") ?? "needs a date";
+        var shown = ZoneClock.ShownRange(entry, TimeZoneInfo.Local);
+        var day = entry.Date is null ? "needs a date" : shown.Date.ToString("yyyy-MM-dd");
         if (entry.Repeat is not null)
             day += " · " + entry.Repeat.Label;
-        var clock = entry.Time is TimeOnly time
-            ? entry.End is TimeOnly end ? $"{time:HH:mm}-{end:HH:mm}" : time.ToString("HH:mm")
+        var clock = shown.Start is TimeOnly time
+            ? shown.End is TimeOnly end ? $"{time:HH:mm}-{end:HH:mm}" : time.ToString("HH:mm")
             : "";
         var spot = HousingTravel.FindVenue(entry.Place, entry.EventText, entry.Ward, entry.Server, entry.SpeakerWorld);
         var where = spot is HousingSpot found
@@ -749,6 +753,7 @@ public sealed class CalendarWindow : Window
         {
             "accepted" => "Test accepted",
             "pending" => "Test unaccepted",
+            "parse-debug" => "Test debug",
             _ => "Test resets",
         };
         if (ImGui.Button($"{testLabel}##{id}-se"))
@@ -836,7 +841,7 @@ public sealed class CalendarWindow : Window
         if (!ImGui.CollapsingHeader("Chats##listen"))
             return;
 
-        ImGui.TextWrapped("Say, shout, yell, incoming tells, free company, free company announcements, and novice network start on.");
+        ImGui.TextWrapped("Say, shout, yell, incoming tells, free company, free company announcements, and novice network start on. An unchecked chat is not added, and invites from that chat stay off the calendar.");
         if (!this.session.Listening)
             ImGui.BeginDisabled();
         foreach (var option in ChatChannels.All)
@@ -885,9 +890,9 @@ public sealed class CalendarWindow : Window
             this.save();
         ImGui.SetNextItemWidth(260f);
         ImGui.InputTextWithHint("##event-search", "Search", ref this.eventSearch, 200);
-        this.ApplySyncWeek();
+        if (!this.CompactMode) this.ApplySyncWeek();
         ImGui.SameLine();
-        if (ImGui.Button(this.weekView ? "Month" : "Week"))
+        if (!this.CompactMode && ImGui.Button(this.weekView ? "Month" : "Week"))
         {
             this.weekView = !this.weekView;
             this.weekChosen = true;
@@ -897,7 +902,7 @@ public sealed class CalendarWindow : Window
                 this.weekStart = SundayOn(DateOnly.FromDateTime(DateTime.Now));
         }
 
-        if (this.weekView)
+        if (this.weekView || this.CompactMode)
         {
             this.DrawWeek();
             ImGui.EndChild();
@@ -905,9 +910,9 @@ public sealed class CalendarWindow : Window
         }
 
         this.FollowToday();
-        var month = this.session.CurrentMonth();
+        var month = this.GridMonth();
         if (ImGui.Button("Previous month"))
-            month = this.session.Page(-1);
+        { this.session.Show(new DateOnly(month.Year, month.Month, 1).AddMonths(-1)); month = this.GridMonth(); }
         ImGui.SameLine();
         ImGui.SetNextItemWidth(128f);
         if (ImGui.BeginCombo("##month", new DateOnly(2000, month.Month, 1).ToString("MMMM", System.Globalization.CultureInfo.InvariantCulture)))
@@ -918,7 +923,7 @@ public sealed class CalendarWindow : Window
                 if (ImGui.Selectable($"{label}##month-{choice}", choice == month.Month))
                 {
                     this.session.Show(new DateOnly(month.Year, choice, 1));
-                    month = this.session.CurrentMonth();
+                    month = this.GridMonth();
                 }
             }
 
@@ -936,7 +941,7 @@ public sealed class CalendarWindow : Window
                 if (ImGui.Selectable($"{year}##year-{year}", year == month.Year))
                 {
                     this.session.Show(new DateOnly(year, month.Month, 1));
-                    month = this.session.CurrentMonth();
+                    month = this.GridMonth();
                 }
 
                 if (year == todayYear && ImGui.IsWindowAppearing())
@@ -948,7 +953,7 @@ public sealed class CalendarWindow : Window
 
         ImGui.SameLine();
         if (ImGui.Button("Next month"))
-            month = this.session.Page(1);
+        { this.session.Show(new DateOnly(month.Year, month.Month, 1).AddMonths(1)); month = this.GridMonth(); }
         var today = DateTime.Now;
         if (month.Year != today.Year || month.Month != today.Month)
         {
@@ -959,7 +964,7 @@ public sealed class CalendarWindow : Window
                 this.session.Show(todayDate);
                 if (this.folderDay is not null)
                     this.folderDay = todayDate.Day;
-                month = this.session.CurrentMonth();
+                month = this.GridMonth();
             }
         }
 
@@ -1003,6 +1008,7 @@ public sealed class CalendarWindow : Window
         }
         this.spanSlots = GameSchedule.LaneSlotsByDay(monthLanes, monthLaneItems);
         this.spanOriginY.Clear();
+        this.nightAnchors.Clear();
         for (var index = 0; index < month.Cells.Count; index++)
         {
             var column = index % 7;
@@ -1013,6 +1019,7 @@ public sealed class CalendarWindow : Window
         }
 
         this.DrawSchedule(month, grid, side, gap, monthLanes);
+        this.DrawNightLinks();
         ImGui.EndChild();
 
         ImGui.BeginChild("month-detail", new Vector2(0f, detailH), true);
@@ -1121,7 +1128,7 @@ public sealed class CalendarWindow : Window
         var y1 = originY + (lane * step);
         var min = new Vector2(x1, y1);
         var max = new Vector2(x2, y1 + bar);
-        draw.AddRectFilled(min, max, ImGui.ColorConvertFloat4ToU32(fill));
+        this.PaintEventFill(draw, min, max, fill);
         if (eventBorder)
             draw.AddRect(min, max, ImGui.ColorConvertFloat4ToU32(new Vector4(0.85f, 0.72f, 0.28f, 1f)));
         var label = this.session.LightCalendar ? chip : this.Fit(chip, max.X - min.X - 8f);
@@ -1140,26 +1147,46 @@ public sealed class CalendarWindow : Window
 
     private List<OvernightBar> OvernightSpans(DateOnly from, DateOnly to)
     {
+        if (this.session.Appearance.Overnight != OvernightStyle.Bars) return [];
+        if (this.overnightCache.TryGetValue((from, to), out var cached)) return cached;
         var list = new List<OvernightBar>();
+        this.overnightCache[(from, to)] = list;
         foreach (var entry in this.session.Log.Entries)
         {
             if (!this.IncludeLocal(entry))
                 continue;
-            var (startDay, startClock, endClock) = Overnight.Shown(entry, TimeZoneInfo.Local);
-            if (Overnight.Span(startDay, startClock, endClock) is not { } span)
-                continue;
-            if (span.End < from || span.Start > to)
-                continue;
             var named = EventTitle.Readable(EventTitle.Choose(entry.EventText));
-            var title = named.Length > 0 ? named : string.IsNullOrWhiteSpace(entry.Place) ? entry.EventText : entry.Place;
-            var label = startClock is TimeOnly begin && endClock is TimeOnly stop
-                ? $"{begin:HH:mm}–{stop:HH:mm} {title}"
-                : title;
-            if (!this.MatchesSearch(label, entry.EventText, entry.Sender, entry.Place, entry.Server))
+            var title = (LiveInvite.IsRecent(entry.EventText, entry.DetectedAt, DateTimeOffset.UtcNow) ? "Now · " : "") + (named.Length > 0 ? named : string.IsNullOrWhiteSpace(entry.Place) ? entry.EventText : entry.Place);
+            if (!this.MatchesSearch(title, entry.EventText, entry.Sender, entry.Place, entry.Server))
                 continue;
-            var line = new DayLine(startClock, 0, label, entry.EventText, entry, null, true, OnDay: span.Start);
-            var (fill, ink) = this.Ink(line);
-            list.Add(new OvernightBar("overnight:" + entry.Id, span.Start, span.End, label, entry.EventText, line, fill, ink));
+            foreach (var span in Overnight.Spans(entry, from, to, TimeZoneInfo.Local))
+            {
+                var label = $"{span.StartClock:HH:mm}–{span.EndClock:HH:mm} {title}";
+                var line = new DayLine(span.StartClock, 0, title, entry.EventText, span.Entry, null, true,
+                    OnDay: span.Start, EndAt: span.EndClock, Pinned: entry.Pinned);
+                var (fill, ink) = this.Ink(line);
+                var key = $"overnight:{span.StartClock:HHmm}:local:{entry.Id}:{span.Start:yyyy-MM-dd}";
+                list.Add(new OvernightBar(key, span.Start, span.End, label, entry.EventText, line, fill, ink));
+            }
+        }
+
+        foreach (var item in this.syncFrame)
+        {
+            if (!this.IncludeSync(item))
+                continue;
+            var named = EventTitle.Readable((item.Title.Length > 0 ? item.Title : EventTitle.Choose(item.Text)));
+            var title = (LiveInvite.IsRecent(item.Text, item.ObservedAt, DateTimeOffset.UtcNow) ? "Now · " : "") + (named.Length > 0 ? named : item.Text);
+            if (!this.MatchesSearch(title, item.Text, item.World))
+                continue;
+            foreach (var span in Overnight.Spans(this.SharedEntry(item), from, to, TimeZoneInfo.Local))
+            {
+                var label = $"{span.StartClock:HH:mm}–{span.EndClock:HH:mm} {title}";
+                var line = new DayLine(span.StartClock, 0, title, item.Text, null, null, true, null,
+                    item.ColorToken, item.Id, span.Start, span.EndClock, this.session.SyncPinned(item.Id));
+                var (fill, ink) = this.Ink(line);
+                var key = $"overnight:{span.StartClock:HHmm}:sync:{item.Id}:{span.Start:yyyy-MM-dd}";
+                list.Add(new OvernightBar(key, span.Start, span.End, label, item.Text, line, fill, ink));
+            }
         }
 
         return list;
@@ -1209,9 +1236,9 @@ public sealed class CalendarWindow : Window
 
     private (Vector4 Fill, Vector4 Ink) Tone(ResetTone tone) => tone switch
     {
-        ResetTone.Cactus => (this.session.CactusColor, new Vector4(0.08f, 0.14f, 0.02f, 1f)),
-        ResetTone.Event => (this.session.EventColor, new Vector4(0.96f, 0.96f, 0.96f, 1f)),
-        _ => (this.session.CrystalColor, new Vector4(1f, 1f, 1f, 1f)),
+        ResetTone.Cactus => (this.session.CactusColor, this.session.Appearance.Ink("Cactpot", this.session.CactusColor)),
+        ResetTone.Event => (this.session.EventColor, this.session.Appearance.Ink("Limited event", this.session.EventColor)),
+        _ => (this.session.CrystalColor, this.session.Appearance.Ink("Reset", this.session.CrystalColor)),
     };
 
     private readonly record struct DayLine(TimeOnly? Time, int Rank, string Title, string Detail, CalendarEntry? Entry, ResetTone? Tone, bool Span, IReadOnlyList<DayLine>? Members = null, string? ColorToken = null, string? SyncId = null, DateOnly? OnDay = null, TimeOnly? EndAt = null, bool Pinned = false);
@@ -1233,12 +1260,15 @@ public sealed class CalendarWindow : Window
 
     private void BeginEdit(CalendarEntry entry)
     {
+        entry = this.session.Log.Entries.FirstOrDefault(saved => saved.Id == entry.Id) ?? entry;
         this.editingId = entry.Id;
-        if (entry.Date is DateOnly day)
+        var clock = ClockInput.FromEntry(entry, TimeZoneInfo.Local);
+        if (clock.Date is DateOnly day)
             this.session.Show(day);
+        this.editErrors = default;
         this.editNote = entry.EventText;
-        this.editDate = entry.Date?.ToString("yyyy-MM-dd") ?? "";
-        this.editTime = entry.Time?.ToString("HH:mm") ?? "";
+        this.editDate = clock.DateText;
+        this.editTime = clock.TimeText;
         this.editPlace = entry.Place;
         this.editHasColor = entry.Color is not null;
         this.editColor = entry.Color ?? (entry.Accepted ? this.session.AcceptedColor : this.session.PendingColor);
@@ -1253,8 +1283,10 @@ public sealed class CalendarWindow : Window
         ImGui.InputTextMultiline($"Note##edit-{entry.Id}", ref this.editNote, 4000, new Vector2(MathF.Max(120f, width - picker - 12f), 72f));
         ImGui.SetNextItemWidth(MathF.Max(120f, width - picker - 12f));
         ImGui.InputText($"Date##edit-{entry.Id}", ref this.editDate, 16);
+        FieldError(this.editErrors.Date);
         ImGui.SetNextItemWidth(MathF.Max(120f, width - picker - 12f));
         ImGui.InputText($"Time##edit-{entry.Id}", ref this.editTime, 32);
+        FieldError(this.editErrors.Time);
         ImGui.SetNextItemWidth(MathF.Max(120f, width - picker - 12f));
         ImGui.InputText($"Location##edit-{entry.Id}", ref this.editPlace, 200);
         ImGui.EndGroup();
@@ -1270,10 +1302,12 @@ public sealed class CalendarWindow : Window
         if (ImGui.SmallButton($"Default##tint-{entry.Id}"))
             this.editHasColor = false;
         ImGui.EndGroup();
+        ImGui.TextDisabled("Time: 21:00 or 21:00-23:00. Empty Date or Time removes it.");
+        FieldError(this.editErrors.Message);
         if (!ImGui.Button($"Save##edit-{entry.Id}"))
             return;
-        this.session.Log.SetColor(entry.Id, this.editHasColor ? this.editColor : null);
-        if (!this.session.Log.Revise(entry.Id, this.editNote, this.editDate, this.editTime, this.editPlace, DateTimeOffset.UtcNow, this.session.Places, this.session.Channels))
+        if (!this.session.Log.TryRevise(entry.Id, this.editNote, this.editDate, this.editTime, this.editPlace,
+            this.editHasColor ? this.editColor : null, DateTimeOffset.UtcNow, this.session.Places, this.session.Channels, out this.editErrors))
             return;
         if (!entry.Accepted)
             this.session.Log.Accept(entry.Id);
@@ -1367,11 +1401,7 @@ public sealed class CalendarWindow : Window
             if (ImGui.SmallButton($"{(entry.Pinned ? "Unpin" : "Pin")}##pin-{entry.Id}") && this.session.Log.SetPinned(entry.Id, !entry.Pinned))
                 this.save();
             ImGui.SameLine();
-            if (ImGui.SmallButton($"Delete##detail-{entry.Id}"))
-            {
-                this.RemoveEntry(entry.Id);
-                this.selectedLine = null;
-            }
+            this.DrawDelete(entry, snapshot.Date, $"detail-{entry.Id}");
 
             return;
         }
@@ -1438,20 +1468,21 @@ public sealed class CalendarWindow : Window
 
     private void DrawWeek()
     {
-        if (ImGui.Button("Previous week"))
-            this.weekStart = this.weekStart.AddDays(-7);
+        var days = this.VisibleDays;
+        if (ImGui.Button(this.CompactMode ? "Previous 3 days" : "Previous week"))
+            this.weekStart = this.weekStart.AddDays(-days);
         ImGui.SameLine();
-        ImGui.TextUnformatted($"{this.weekStart:MMM d} – {this.weekStart.AddDays(6):MMM d}");
+        ImGui.TextUnformatted($"{this.weekStart:MMM d} – {this.weekStart.AddDays(days - 1):MMM d}");
         ImGui.SameLine();
-        if (ImGui.Button("Next week"))
-            this.weekStart = this.weekStart.AddDays(7);
+        if (ImGui.Button(this.CompactMode ? "Next 3 days" : "Next week"))
+            this.weekStart = this.weekStart.AddDays(days);
         var today = DateOnly.FromDateTime(DateTime.Now);
-        if (today < this.weekStart || today > this.weekStart.AddDays(6))
+        if (today < this.weekStart || today > this.weekStart.AddDays(days - 1))
         {
             ImGui.SameLine();
             if (ImGui.Button("Today"))
             {
-                this.weekStart = SundayOn(today);
+                this.weekStart = this.CompactMode ? today.AddDays(-1) : SundayOn(today);
                 this.session.Show(today);
                 if (this.folderDay is not null)
                     this.folderDay = today.Day;
@@ -1461,9 +1492,9 @@ public sealed class CalendarWindow : Window
         const float handleH = 16f;
         var room = ImGui.GetContentRegionAvail();
         var line = ImGui.GetTextLineHeightWithSpacing();
-        var usable = Math.Max(line * 16f, room.Y - handleH);
-        var minDetail = line * 6f;
-        var minWeek = line * 8f;
+        var usable = Math.Max(line * (this.CompactMode ? 8f : 16f), room.Y - handleH);
+        var minDetail = line * (this.CompactMode ? 3f : 6f);
+        var minWeek = line * (this.CompactMode ? 4f : 8f);
         var share = Math.Clamp(this.session.WeekDetailShare, minDetail / usable, (usable - minWeek) / usable);
         var detailH = usable * share;
         var weekH = usable - detailH;
@@ -1471,17 +1502,17 @@ public sealed class CalendarWindow : Window
         ImGui.BeginChild("week-grid", new Vector2(0f, weekH), false);
         this.UseTextScale();
         const float gap = 6f;
-        var width = MathF.Max(96f, MathF.Floor((ImGui.GetContentRegionAvail().X - (gap * 6f)) / 7f));
+        var width = MathF.Max(96f, MathF.Floor((ImGui.GetContentRegionAvail().X - (gap * (days - 1))) / days));
         var header = ImGui.GetCursorScreenPos();
-        for (var column = 0; column < 7; column++)
+        for (var column = 0; column < days; column++)
         {
             ImGui.SetCursorScreenPos(header + new Vector2(column * (width + gap), 0));
-            ImGui.TextUnformatted(new[] { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" }[column]);
+            ImGui.TextUnformatted(this.weekStart.AddDays(column).ToString("ddd"));
         }
 
         var grid = header + new Vector2(0, ImGui.GetTextLineHeightWithSpacing());
         var height = Math.Max(line * 6f, ImGui.GetContentRegionAvail().Y - ImGui.GetTextLineHeightWithSpacing() - 4f);
-        var weekEnd = this.weekStart.AddDays(6);
+        var weekEnd = this.weekStart.AddDays(days - 1);
         var (weekLanes, weekLaneItems) = this.BuildSpanLanes(this.weekStart, weekEnd, this.weekStart.Year, this.weekStart.Month);
         if (weekEnd.Month != this.weekStart.Month || weekEnd.Year != this.weekStart.Year)
         {
@@ -1492,13 +1523,15 @@ public sealed class CalendarWindow : Window
 
         this.spanSlots = GameSchedule.LaneSlotsByDay(weekLanes, weekLaneItems);
         this.spanOriginY.Clear();
-        for (var column = 0; column < 7; column++)
+        this.nightAnchors.Clear();
+        for (var column = 0; column < days; column++)
         {
             ImGui.SetCursorScreenPos(grid + new Vector2(column * (width + gap), 0));
             this.DrawDay(this.weekStart.AddDays(column), width, height, false, scrollChips: true);
         }
 
         this.DrawWeekSpans(grid, width, gap, weekLanes);
+        this.DrawNightLinks();
         ImGui.EndChild();
 
         this.DrawWeekSplit(usable, minDetail, minWeek);
@@ -1534,7 +1567,7 @@ public sealed class CalendarWindow : Window
             : hovered
                 ? new Vector4(0.32f, 0.36f, 0.42f, 1f)
                 : new Vector4(0.22f, 0.24f, 0.28f, 1f);
-        draw.AddRectFilled(min, max, ImGui.ColorConvertFloat4ToU32(fill));
+        this.PaintEventFill(draw, min, max, fill);
         const string grip = "...";
         var gripSize = ImGui.CalcTextSize(grip);
         draw.AddText(
@@ -1545,7 +1578,7 @@ public sealed class CalendarWindow : Window
 
     private void DrawWeekSpans(Vector2 grid, float width, float gap, IReadOnlyDictionary<string, int> lanes)
     {
-        var weekEnd = this.weekStart.AddDays(6);
+        var weekEnd = this.weekStart.AddDays(this.VisibleDays - 1);
         var marks = new List<ScheduleOccurrence>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         void Take(int year, int month)
@@ -1578,7 +1611,7 @@ public sealed class CalendarWindow : Window
             : grid.Y + ImGui.GetStyle().WindowPadding.Y + ImGui.GetFrameHeight() + ImGui.GetStyle().ItemSpacing.Y;
         foreach (var mark in marks)
         {
-            if (GameSchedule.WeekSegment(this.weekStart, mark.StartDate, mark.EndDate) is not SpanSegment segment)
+            if (this.ViewSegment(mark.StartDate, mark.EndDate) is not SpanSegment segment)
                 continue;
             if (!lanes.TryGetValue(mark.Key, out var lane))
                 continue;
@@ -1607,7 +1640,7 @@ public sealed class CalendarWindow : Window
 
         foreach (var item in overnight)
         {
-            if (GameSchedule.WeekSegment(this.weekStart, item.Start, item.End) is not SpanSegment segment)
+            if (this.ViewSegment(item.Start, item.End) is not SpanSegment segment)
                 continue;
             if (!lanes.TryGetValue(item.Key, out var lane))
                 continue;
@@ -1642,17 +1675,30 @@ public sealed class CalendarWindow : Window
 
     private void BeginDraw()
     {
+        var bookId = SyncGate.Panel?.BookId ?? "";
+        if (Environment.TickCount64 < this.nextSnapshot && this.sampledBook == bookId && this.sampledLocalRevision == this.session.Log.Revision)
+        { this.ApplyWindowSize(); return; }
+        this.nextSnapshot = Environment.TickCount64 + 250;
+        this.sampledBook = bookId;
+        this.sampledLocalRevision = this.session.Log.Revision;
         this.syncFrame = this.FrameForDraw(SyncGate.Panel);
         var scope = this.GlanceScope();
         if (!string.Equals(scope, this.glanceKey, StringComparison.Ordinal))
         {
             this.glances.Clear();
             this.marksFrame.Clear();
+            this.overnightCache.Clear();
+            this.sharedEntryCache.Clear();
+            this.titleCache.Clear();
+            this.nestedCache.Clear();
             this.glanceKey = scope;
         }
 
         this.ApplyWindowSize();
     }
+
+    private string ChannelScope() =>
+        string.Join(',', ChatChannels.All.Where(option => this.session.ChannelOn(option.Channel)).Select(option => option.Channel));
 
     private string GlanceScope()
     {
@@ -1664,17 +1710,18 @@ public sealed class CalendarWindow : Window
             '|',
             this.session.Log.Revision,
             string.Join(',', this.session.PinnedSync.Order(StringComparer.Ordinal)),
-            SyncStamp(this.syncFrame),
+            SyncDisplay.Stamp(this.syncFrame),
             this.eventSearch.Trim(),
             this.session.ShowLocalAccepted,
             this.session.ShowLocalUnaccepted,
             this.session.ShowHidden,
             this.session.ShowSyncAccepted,
             this.session.ShowSyncUnaccepted,
-            this.session.ShowAllServers,
+            this.session.PendingScope,
             this.session.ShowResets,
             this.session.ShowPastLocal,
             this.session.ShowPastSync,
+            this.ChannelScope(),
             DateTime.Now.ToString("yyyyMMddHHmm", System.Globalization.CultureInfo.InvariantCulture),
             this.session.CactpotRegion,
             resets,
@@ -1682,30 +1729,13 @@ public sealed class CalendarWindow : Window
             viewed,
             enabled,
             this.session.Year,
-            this.session.Month);
-    }
-
-    private static int SyncStamp(IReadOnlyList<SyncAnnouncement> rows)
-    {
-        var hash = new HashCode();
-        hash.Add(rows.Count);
-        foreach (var row in rows)
-        {
-            hash.Add(row.Id);
-            hash.Add(row.Revision);
-            hash.Add(row.Accepted);
-            hash.Add(row.Hidden);
-            hash.Add(row.Declined);
-            hash.Add(row.Date);
-            hash.Add(row.Text);
-        }
-
-        return hash.ToHashCode();
+            this.session.Month,
+            this.weekStart, this.CompactMode, this.session.Appearance.Layout, this.session.Appearance.Overnight);
     }
 
     private void ApplyWindowSize()
     {
-        var min = this.session.LightCalendar ? new Vector2(780f, 520f) : new Vector2(1180f, 820f);
+        var min = this.CompactMode ? new Vector2(620f, 380f) : this.session.LightCalendar ? new Vector2(780f, 520f) : new Vector2(1180f, 820f);
         if (this.appliedMin == min)
             return;
         this.appliedMin = min;
@@ -1748,7 +1778,7 @@ public sealed class CalendarWindow : Window
         draw.AddRectFilled(origin, origin + new Vector2(width, height), ImGui.ColorConvertFloat4ToU32(bg));
         var lineHeight = ImGui.GetTextLineHeight();
         var dayPos = origin + new Vector2(6f, 4f);
-        var dayColor = outside ? ImGui.GetColorU32(ImGuiCol.TextDisabled) : ImGui.GetColorU32(ImGuiCol.Text);
+        var dayColor = outside || isToday ? ImGui.ColorConvertFloat4ToU32(this.session.Appearance.Ink(outside ? "Other month" : "Today", bg)) : ImGui.GetColorU32(ImGuiCol.Text);
         draw.AddText(dayPos, dayColor, shown.Day.ToString(System.Globalization.CultureInfo.InvariantCulture));
         var dayMax = dayPos + new Vector2(lineHeight * 2f, lineHeight);
         if (ImGui.IsMouseHoveringRect(dayPos, dayMax) && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
@@ -1761,24 +1791,32 @@ public sealed class CalendarWindow : Window
         var y = this.spanOriginY[shown] + (slots * step);
         var bottom = origin.Y + height - 4f;
         var textWidth = MathF.Max(8f, width - 12f);
-        var shownCount = 0;
-        var total = 0;
-        foreach (var line in lines)
+        var overflowY = bottom - lineHeight;
+        if (lines.Count(line => this.ShowChip(line, showSpanChips)) * step > bottom - y) bottom = overflowY - 2f;
+        var hidden = 0;
+        if (this.session.Appearance.Layout == CalendarLayout.Nested)
+            hidden = this.DrawNestedDay(shown, showSpanChips, origin.X + 4f, ref y, bottom, textWidth, step);
+        else
         {
-            if (!showSpanChips && line.Span)
-                continue;
-            total++;
-            if (y + step > bottom)
-                continue;
-            this.DrawFlatChip(draw, origin.X + 4f, y, textWidth, step - 2f, line);
-            y += step;
-            shownCount++;
-        }
+            var shownCount = 0;
+            var total = 0;
+            foreach (var line in lines)
+            {
+                if (!this.ShowChip(line, showSpanChips))
+                    continue;
+                total++;
+                if (y + step > bottom)
+                    continue;
+                this.DrawFlatChip(draw, origin.X + 4f, y, textWidth, step - 3f, line);
+                y += step;
+                shownCount++;
+            }
 
-        var hidden = total - shownCount;
+            hidden = total - shownCount;
+        }
         if (hidden > 0)
         {
-            var morePos = new Vector2(origin.X + 4f, MathF.Min(y, bottom - lineHeight));
+            var morePos = new Vector2(origin.X + 4f, MathF.Max(origin.Y + lineHeight, MathF.Min(y + 2f, overflowY)));
             draw.AddText(morePos, ImGui.GetColorU32(ImGuiCol.TextDisabled), $"+{hidden}");
             var moreMax = morePos + new Vector2(lineHeight * 2f, lineHeight);
             if (ImGui.IsMouseHoveringRect(morePos, moreMax) && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
@@ -1794,7 +1832,8 @@ public sealed class CalendarWindow : Window
         var (fill, ink) = this.Ink(line);
         var min = new Vector2(x, y);
         var max = min + new Vector2(width, height);
-        draw.AddRectFilled(min, max, ImGui.ColorConvertFloat4ToU32(fill));
+        this.PaintEventFill(draw, min, max, fill);
+        this.NoteNightAnchor(line, min, max, fill);
         var when = this.ClockLabel(line);
         draw.PushClipRect(min, max, true);
         this.DrawScaledText(draw, new Vector2(min.X + 3f, min.Y + 1f), ImGui.ColorConvertFloat4ToU32(ink), PinMark(line) + when + line.Title);
@@ -1840,26 +1879,37 @@ public sealed class CalendarWindow : Window
         var step = this.SpanRowStep();
         this.spanOriginY[shown] = ImGui.GetCursorScreenPos().Y;
         var lines = this.CachedGlance(shown);
-        var chips = lines.Where(line => showSpanChips || !line.Span).ToList();
+        var chips = lines.Where(line => this.ShowChip(line, showSpanChips)).ToList();
         var slots = showSpanChips ? 0 : (this.spanSlots.TryGetValue(shown, out var reserved) ? reserved : 0);
         var spacing = ImGui.GetStyle().ItemSpacing;
-        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(spacing.X, 0f));
+        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(spacing.X, 1f));
         if (slots > 0)
             ImGui.Dummy(new Vector2(1f, slots * step));
         var reserve = scrollChips ? 0f : ImGui.GetFrameHeightWithSpacing() + 4f;
         var bottom = ImGui.GetWindowContentRegionMax().Y - reserve;
-        var shownCount = 0;
-        foreach (var line in chips)
+        var hidden = 0;
+        if (this.session.Appearance.Layout == CalendarLayout.Nested)
         {
-            if (!scrollChips && ImGui.GetCursorPosY() + step > bottom)
-                break;
-            this.DrawColorBlock(line);
-            shownCount++;
+            var origin = ImGui.GetCursorScreenPos();
+            var y = origin.Y;
+            var end = scrollChips ? y + chips.Count * step : y + Math.Max(0, bottom - ImGui.GetCursorPosY());
+            hidden = this.DrawNestedDay(shown, showSpanChips, origin.X, ref y, end, ImGui.GetContentRegionAvail().X, step);
+            ImGui.Dummy(new Vector2(1, Math.Max(1, y - origin.Y)));
         }
+        else
+        {
+            var shownCount = 0;
+            foreach (var line in chips)
+            {
+                if (!scrollChips && ImGui.GetCursorPosY() + step > bottom)
+                    break;
+                this.DrawColorBlock(line);
+                shownCount++;
+            }
 
+            hidden = chips.Count - shownCount;
+        }
         ImGui.PopStyleVar();
-
-        var hidden = chips.Count - shownCount;
         if (hidden > 0 && ImGui.SmallButton($"+{hidden}##more-{shown:yyyy-MM-dd}"))
             this.OpenDay(shown);
 
@@ -1877,7 +1927,8 @@ public sealed class CalendarWindow : Window
         var pos = ImGui.GetCursorScreenPos();
         var max = pos + new Vector2(width, height);
         var draw = ImGui.GetWindowDrawList();
-        draw.AddRectFilled(pos, max, ImGui.ColorConvertFloat4ToU32(fill));
+        this.PaintEventFill(draw, pos, max, fill);
+        this.NoteNightAnchor(line, pos, max, fill);
         var when = this.ClockLabel(line);
         var label = this.Fit(PinMark(line) + when + line.Title, width - 8f);
         draw.PushClipRect(pos, max, true);
@@ -1932,12 +1983,12 @@ public sealed class CalendarWindow : Window
 
     private void DrawFolderRow(DayLine line)
     {
-        var when = line.Time is TimeOnly time ? $"{time:HH:mm}  " : "";
+        var when = this.ClockLabel(line);
         var id = line.SyncId ?? line.Entry?.Id ?? $"{when}{line.Title}";
         var expanded = ImGui.CollapsingHeader($"{PinMark(line)}{when}{line.Title}##folder-{id}");
         if (!expanded)
         {
-            var facts = this.FolderFacts(line);
+            var facts = this.session.Appearance.Lists == InviteListStyle.Tree ? "" : this.FolderFacts(line);
             if (facts.Length > 0)
                 ImGui.TextDisabled(facts);
             return;
@@ -1945,7 +1996,8 @@ public sealed class CalendarWindow : Window
 
         if (line.SyncId is not null)
         {
-            this.DrawSyncDetail(line);
+            this.DrawSyncDetail(line, foldMessage: true);
+            this.DrawMessageFold(id, line.Detail);
             return;
         }
 
@@ -1968,6 +2020,7 @@ public sealed class CalendarWindow : Window
         }
 
         this.DrawInviteGlance(entry);
+        this.DrawMessageFold(id, entry.EventText);
         if (ImGui.SmallButton($"Edit##folder-{entry.Id}"))
             this.BeginEdit(entry);
         ImGui.SameLine();
@@ -1997,8 +2050,7 @@ public sealed class CalendarWindow : Window
         if (ImGui.SmallButton($"{(entry.Pinned ? "Unpin" : "Pin")}##folder-pin-{entry.Id}") && this.session.Log.SetPinned(entry.Id, !entry.Pinned))
             this.save();
         ImGui.SameLine();
-        if (ImGui.SmallButton($"Delete##folder-{entry.Id}"))
-            this.RemoveEntry(entry.Id);
+        this.DrawDelete(entry, entry.Date, $"folder-{entry.Id}");
         if (this.editingId == entry.Id)
             this.DrawEdit(entry);
     }
@@ -2028,26 +2080,17 @@ public sealed class CalendarWindow : Window
         {
             if (!this.IncludeLocal(entry))
                 continue;
-            var labeled = ZoneClock.Labeled(entry.EventText);
-            var (startDay, startClock, endClock) = Overnight.Shown(entry, TimeZoneInfo.Local);
+            var occurrence = SyncClock.OnDate(entry, date)
+                ?? (date > DateOnly.MinValue ? SyncClock.OnDate(entry, date.AddDays(-1)) : null);
+            if (occurrence is null) continue;
+            var (startDay, startClock, endClock) = Overnight.Shown(occurrence, TimeZoneInfo.Local);
             var overnight = Overnight.Is(startClock, endClock);
-            if (entry.Repeat is null)
-            {
-                if (!Overnight.Covers(date, startDay, startClock, endClock))
-                    continue;
-            }
-            else if (!EventRepeat.FallsOn(entry, date)
-                && !(overnight && EventRepeat.FallsOn(entry, date.AddDays(-1))))
-            {
-                continue;
-            }
+            if (!Overnight.Covers(date, startDay, startClock, endClock)) continue;
 
             var named = EventTitle.Readable(EventTitle.Choose(entry.EventText));
-            var title = named.Length > 0 ? named : string.IsNullOrWhiteSpace(entry.Place) ? entry.EventText : entry.Place;
-            if (overnight && startClock is TimeOnly begin && endClock is TimeOnly stop)
-                title = $"{begin:HH:mm}–{stop:HH:mm} {title}";
-            var clock = date == startDay ? startClock : endClock;
-            lines.Add(new DayLine(clock, overnight ? 0 : clock is null ? 2 : 1, title, entry.EventText, entry, null, overnight, OnDay: date, Pinned: entry.Pinned));
+            var title = (LiveInvite.IsRecent(entry.EventText, entry.DetectedAt, DateTimeOffset.UtcNow) ? "Now · " : "") + (named.Length > 0 ? named : string.IsNullOrWhiteSpace(entry.Place) ? entry.EventText : entry.Place);
+            var clock = date == startDay ? startClock : overnight ? TimeOnly.MinValue : endClock;
+            lines.Add(new DayLine(clock, overnight ? 0 : clock is null ? 2 : 1, title, entry.EventText, occurrence, null, overnight, OnDay: date, EndAt: endClock, Pinned: entry.Pinned));
         }
 
         this.AddSyncLines(date, lines);
@@ -2119,12 +2162,12 @@ public sealed class CalendarWindow : Window
         if (line.Entry?.Color is Vector4 custom)
         {
             fill = custom;
-            ink = custom.X + custom.Y + custom.Z > 1.8f ? new Vector4(0.12f, 0.08f, 0.02f, 1f) : new Vector4(1f, 1f, 1f, 1f);
+            ink = AutomaticInk(custom);
         }
         else if (line.ColorToken == "sync-pending")
         {
             fill = this.session.SyncPendingColor;
-            ink = new Vector4(1f, 1f, 1f, 1f);
+            ink = this.session.Appearance.Ink("Sync pending", fill);
         }
         else if (line.Tone is ResetTone tone)
         {
@@ -2133,12 +2176,12 @@ public sealed class CalendarWindow : Window
         else if (line.Entry is { Accepted: true } || line.ColorToken == "accepted")
         {
             fill = kind is EventKind branded ? this.KindFill(branded) : this.session.AcceptedColor;
-            ink = new Vector4(1f, 1f, 1f, 1f);
+            ink = this.session.Appearance.Ink(kind?.Name ?? "Accepted", fill);
         }
         else
         {
             fill = this.session.PendingColor;
-            ink = new Vector4(0.12f, 0.08f, 0.02f, 1f);
+            ink = this.session.Appearance.Ink("Pending", fill);
         }
 
         var accepted = line.Entry is { Accepted: true } || line.ColorToken == "accepted";
@@ -2159,7 +2202,7 @@ public sealed class CalendarWindow : Window
 
     private void DrawColors()
     {
-        ImGui.TextWrapped("Each swatch opens a hue wheel.");
+        ImGui.TextWrapped("Select a swatch to edit its color and text contrast. Presets preserve your palette and contrast choices.");
         ImGui.Separator();
         ImGui.TextDisabled("Calendar");
         this.DrawColor("Pending", this.session.PendingColor, color => this.session.PendingColor = color);
@@ -2185,17 +2228,33 @@ public sealed class CalendarWindow : Window
         this.DrawColor("Discord", this.session.DiscordColor, color => this.session.DiscordColor = color);
     }
 
+    private static Vector4 AutomaticInk(Vector4 color) =>
+        color.X + color.Y + color.Z > 1.8f ? new Vector4(0.12f, 0.08f, 0.02f, 1f) : new Vector4(1f, 1f, 1f, 1f);
+
     private void DrawColor(string label, Vector4 color, Action<Vector4> set)
     {
-        if (!ImGui.ColorEdit4($"{label}##color-{label}", ref color, ImGuiColorEditFlags.PickerHueWheel | ImGuiColorEditFlags.AlphaBar))
-            return;
-        set(color);
-        this.save();
+        ImGui.PushID("color-" + label);
+        if (ImGui.ColorButton("##swatch", color, ImGuiColorEditFlags.AlphaPreviewHalf, new Vector2(28, 20))) ImGui.OpenPopup("Edit color");
+        ImGui.SameLine();
+        if (ImGui.Selectable(label, false)) ImGui.OpenPopup("Edit color");
+        if (ImGui.BeginPopup("Edit color"))
+        {
+            ImGui.TextUnformatted(label);
+            ImGui.SetNextItemWidth(220);
+            if (ImGui.ColorPicker4("##picker", ref color, ImGuiColorEditFlags.PickerHueWheel | ImGuiColorEditFlags.AlphaBar))
+            { set(color); this.save(); }
+            var mode = this.session.Appearance.Text.GetValueOrDefault(label);
+            if (this.AppearanceChoice("Text contrast", (int)mode, ["Auto", "Light", "Dark"], out var selected))
+                this.session.Appearance.Text[label] = (TextContrast)selected;
+            ImGui.TextColored(this.session.Appearance.Ink(label, color), "Sample text · 21:00");
+            ImGui.EndPopup();
+        }
+        ImGui.PopID();
     }
 
     private void DrawEvent(CalendarEntry entry, DateTimeOffset now)
     {
-        var title = EventTitle.Readable(EventTitle.Choose(entry.EventText));
+        var title = this.TitleOf(entry.EventText);
         var who = string.IsNullOrWhiteSpace(entry.Sender) ? "" : entry.Sender;
         var head = title.Length > 0 ? title : who.Length > 0 ? who : "Invite";
         var label = OngoingCheck.IsOngoing(entry, now)
@@ -2218,10 +2277,12 @@ public sealed class CalendarWindow : Window
         var span = ZoneClock.ShownRange(entry, TimeZoneInfo.Local);
         if (entry.Accepted && PastTone.Ended(span.Date, span.Start, span.End, now.LocalDateTime))
             fill = PastTone.Grey(fill);
-        var ink = entry.Accepted
-            ? new Vector4(1f, 1f, 1f, 1f)
-            : new Vector4(0.12f, 0.08f, 0.02f, 1f);
-        draw.AddRectFilled(pos, max, ImGui.ColorConvertFloat4ToU32(fill));
+        var ink = entry.Color is Vector4 chosen
+            ? AutomaticInk(chosen)
+            : entry.Accepted
+                ? this.session.Appearance.Ink(kind?.Name ?? "Accepted", fill)
+                : this.session.Appearance.Ink("Pending", fill);
+        this.PaintEventFill(draw, pos, max, fill);
         ImGui.PushStyleColor(ImGuiCol.Text, ink);
         ImGui.TextWrapped(label);
         ImGui.TextDisabled(facts);
@@ -2232,10 +2293,47 @@ public sealed class CalendarWindow : Window
         if (ImGui.SmallButton($"Edit##day-{entry.Id}"))
             this.BeginEdit(entry);
         ImGui.SameLine();
-        if (ImGui.SmallButton($"Delete##day-{entry.Id}"))
-            this.RemoveEntry(entry.Id);
+        this.DrawDelete(entry, entry.Date, $"day-{entry.Id}");
         if (this.editingId == entry.Id)
             this.DrawEdit(entry);
+    }
+
+    private void DrawDelete(CalendarEntry entry, DateOnly? sourceDay, string key, SyncBook? book = null)
+    {
+        var popup = "Delete occurrence##" + key;
+        var day = sourceDay ?? entry.Date;
+        if (ImGui.SmallButton("Delete##" + key))
+        {
+            if (entry.Repeat is null)
+            {
+                if (book is null) this.RemoveEntry(entry.Id); else book.Dismiss(entry.Id);
+                this.selectedLine = null;
+            }
+            else if (ImGui.GetIO().KeyShift && day is DateOnly selectedDay)
+                Delete(DeleteScope.Occurrence, selectedDay);
+            else if (ImGui.GetIO().KeyCtrl)
+                Delete(DeleteScope.Series, day ?? DateOnly.FromDateTime(DateTime.Today));
+            else ImGui.OpenPopup(popup);
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Shift + click: delete this occurrence immediately.\nCtrl + click: delete the entire series immediately.\nClick: choose what to delete.");
+        if (!ImGui.BeginPopup(popup)) return;
+        ImGui.TextUnformatted("Delete from your calendar");
+        if (day is DateOnly selected)
+        {
+            if (ImGui.Selectable($"This occurrence ({selected:yyyy-MM-dd})")) Delete(DeleteScope.Occurrence, selected);
+            if (ImGui.Selectable("This and future occurrences")) Delete(DeleteScope.Following, selected);
+        }
+        if (ImGui.Selectable("Entire series")) Delete(DeleteScope.Series, day ?? DateOnly.FromDateTime(DateTime.Today));
+        ImGui.EndPopup();
+
+        void Delete(DeleteScope scope, DateOnly date)
+        {
+            if (book is null) this.session.Log.Delete(entry.Id, date, scope);
+            else book.Delete(entry.Id, date, scope);
+            this.selectedLine = null;
+            this.save();
+        }
     }
 
     private void RemoveEntry(string id)
@@ -2257,7 +2355,7 @@ public sealed class CalendarWindow : Window
         return string.Join(" · ", new[] { day, WhenText(entry), who }.Where(part => part.Length > 0));
     }
 
-    private void DrawClockFix(string id, string date, string time, Action<string, string> apply)
+    private void DrawClockFix(string id, string date, string time, Func<string, string, ClockInputErrors> apply)
     {
         var missing = string.IsNullOrWhiteSpace(time) || time is "date only";
         if (!missing && this.fixId != id)
@@ -2266,6 +2364,7 @@ public sealed class CalendarWindow : Window
             if (ImGui.SmallButton($"Set time##fix-{id}"))
             {
                 this.fixId = id;
+                this.fixErrors = default;
                 this.fixDate = date;
                 this.fixTime = time;
             }
@@ -2276,30 +2375,40 @@ public sealed class CalendarWindow : Window
         if (this.fixId != id)
         {
             this.fixId = id;
+            this.fixErrors = default;
             this.fixDate = date;
             this.fixTime = missing ? "" : time;
         }
 
         ImGui.SetNextItemWidth(160f);
         ImGui.InputText($"Date##fix-date-{id}", ref this.fixDate, 16);
+        FieldError(this.fixErrors.Date);
         ImGui.SetNextItemWidth(200f);
         ImGui.InputText($"Time##fix-time-{id}", ref this.fixTime, 32);
+        FieldError(this.fixErrors.Time);
+        FieldError(this.fixErrors.Message);
         if (!ImGui.Button($"Save##fix-save-{id}"))
             return;
-        apply(this.fixDate, this.fixTime);
+        this.fixErrors = apply(this.fixDate, this.fixTime);
+        if (this.fixErrors.Any) return;
         this.fixId = "";
+        this.save();
     }
+
+    private static void FieldError(string? message)
+    {
+        if (string.IsNullOrEmpty(message)) return;
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 0.55f, 0.35f, 1f));
+        ImGui.TextWrapped(message);
+        ImGui.PopStyleColor();
+    }
+
+    private static string SyncDay(SyncAnnouncement item) => string.IsNullOrWhiteSpace(item.Date) ? "" :
+        ZoneClock.Shown(SyncClock.Entry(item), TimeZoneInfo.Local).Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
     private static string SyncWhen(SyncAnnouncement item)
     {
-        if (!string.IsNullOrWhiteSpace(item.Time))
-            return item.Time.Trim();
-        var walls = ZoneClock.Walls(item.Text);
-        if (walls.Count == 0)
-            return "";
-        return walls.Count > 1
-            ? $"{walls[0].Time:HH:mm}-{walls[1].Time:HH:mm}"
-            : walls[0].Time.ToString("HH:mm");
+        return WhenText(SyncClock.Entry(item));
     }
 
     private static string WhenText(CalendarEntry entry)
@@ -2314,23 +2423,18 @@ public sealed class CalendarWindow : Window
 
     private string ClockLabel(DayLine line)
     {
-        if (this.session.LightCalendar)
-        {
-            return line.Time is TimeOnly fast
-                ? line.Entry?.End is TimeOnly fastEnd ? $"{fast:HH:mm}-{fastEnd:HH:mm} " : $"{fast:HH:mm} "
-                : "";
-        }
-
         if (line.Entry is CalendarEntry entry)
         {
             var shown = ZoneClock.ShownRange(entry, TimeZoneInfo.Local);
-            if (shown.Start is TimeOnly start)
-                return shown.End is TimeOnly end ? $"{start:HH:mm}-{end:HH:mm} " : $"{start:HH:mm} ";
+            var startDay = shown.Date;
+            if (line.OnDay is DateOnly day && startDay is DateOnly first)
+                return DaySort.SliceLabel(day, first, shown.Start ?? entry.Time, shown.End ?? entry.End);
+            return DaySort.RangeLabel(shown.Start ?? entry.Time, shown.End ?? entry.End);
         }
 
-        return line.Time is TimeOnly time
-            ? line.Entry?.End is TimeOnly storedEnd ? $"{time:HH:mm}-{storedEnd:HH:mm} " : $"{time:HH:mm} "
-            : "";
+        if (line.Span && line.Time == TimeOnly.MinValue && line.EndAt is TimeOnly tail)
+            return DaySort.RangeLabel(TimeOnly.MinValue, tail);
+        return DaySort.RangeLabel(line.Time, line.EndAt);
     }
 
     private Vector4 KindFill(EventKind kind) => kind.Name switch
@@ -2387,8 +2491,33 @@ public sealed class CalendarWindow : Window
     {
         var book = SyncGate.Panel;
         var attached = book is not null;
-        if (attached)
-            this.DrawSyncPerformance(book!);
+        var status = this.syncStatusBuffer.Update(book, Environment.TickCount64);
+        if (status is not null)
+            this.DrawSyncPerformance(status);
+        if (this.CompactMode)
+        {
+            if (ImGui.SmallButton(this.compactSidebar ? "Hide panels" : "Panels / settings")) this.compactSidebar = !this.compactSidebar;
+            ImGui.SameLine();
+            ImGui.TextDisabled("3 days · low-height view");
+            ImGui.SameLine();
+            if (ImGui.SmallButton("View filters")) ImGui.OpenPopup("Compact view filters");
+            if (ImGui.BeginPopup("Compact view filters"))
+            {
+                this.DrawViewToggle("Local accepted", this.session.ShowLocalAccepted, value => this.session.ShowLocalAccepted = value); ImGui.NewLine();
+                this.DrawViewToggle("Local unaccepted", this.session.ShowLocalUnaccepted, value => this.session.ShowLocalUnaccepted = value); ImGui.NewLine();
+                this.DrawViewToggle("Resets", this.session.ShowResets, value => this.session.ShowResets = value); ImGui.NewLine();
+                if (attached)
+                {
+                    this.DrawViewToggle("Sync accepted", this.session.ShowSyncAccepted, value => this.session.ShowSyncAccepted = value); ImGui.NewLine();
+                    this.DrawViewToggle("Sync unaccepted", this.session.ShowSyncUnaccepted, value => this.session.ShowSyncUnaccepted = value); ImGui.NewLine();
+                }
+                this.DrawViewToggle("Show hidden", this.session.ShowHidden, value => this.session.ShowHidden = value); ImGui.NewLine();
+                if (book is not null) this.DrawViewTree(book);
+                ImGui.EndPopup();
+            }
+            if (book is not null && this.session.Appearance.ShowServerSummary) this.DrawSharedBanner(book);
+            return;
+        }
         var showResets = this.session.ShowResets;
         var style = ImGui.GetStyle();
         var regionMax = ImGui.GetWindowContentRegionMax().X;
@@ -2438,33 +2567,40 @@ public sealed class CalendarWindow : Window
         this.DrawViewToggle("Show hidden", this.session.ShowHidden, value => this.session.ShowHidden = value);
 
         ImGui.NewLine();
-        ImGui.Dummy(new Vector2(1f, ImGui.GetFrameHeightWithSpacing()));
+        if (!this.CompactMode) ImGui.Dummy(new Vector2(1f, 4f));
+        if (book is not null && this.session.Appearance.ShowServerSummary) this.DrawSharedBanner(book);
     }
 
     private static bool IsSyncLimited(string status) =>
         status.StartsWith("Sync limited", StringComparison.Ordinal)
         || status.StartsWith("Limited", StringComparison.Ordinal);
 
-    private void DrawSyncPerformance(SyncBook book)
+    private void DrawSyncPerformance(SyncStatusView status)
     {
-        if (book.RelayStatus == RelayReach.OutOfDate)
+        if (status.RelayStatus == RelayReach.OutOfDate)
         {
             ImGui.TextColored(new Vector4(0.95f, 0.55f, 0.22f, 1f), "Sync: Out of date. Update Shout Calendar and Shout Calendar Sync.");
             return;
         }
-
-        var status = string.IsNullOrWhiteSpace(book.SyncStatus) ? "Idle" : book.SyncStatus.Trim();
-        var color = IsSyncLimited(status)
-            ? new Vector4(0.95f, 0.55f, 0.22f, 1f)
-            : status.StartsWith("Batching", StringComparison.Ordinal) || status.Contains("past waiting", StringComparison.Ordinal)
-                ? new Vector4(0.90f, 0.78f, 0.35f, 1f)
-                : status.StartsWith("Syncing", StringComparison.Ordinal)
-                    || status.StartsWith("Re-sync", StringComparison.Ordinal)
-                    || status.StartsWith("Waiting", StringComparison.Ordinal)
-                    ? new Vector4(0.45f, 0.72f, 0.95f, 1f)
-                    : new Vector4(0.65f, 0.65f, 0.65f, 1f);
-        var body = status.StartsWith("Sync ", StringComparison.Ordinal) ? status["Sync ".Length..] : status;
-        ImGui.TextColored(color, "Sync: " + body);
+        var now = DateTimeOffset.UtcNow;
+        var progress = status.Progress;
+        var color = progress?.IsStale(now) == true ? new Vector4(0.8f, 0.72f, 0.48f, 1)
+            : progress?.Phase switch
+            {
+                SyncPhase.Current => new Vector4(0.48f, 0.72f, 0.53f, 1),
+                SyncPhase.CatchingUp or SyncPhase.Waiting => new Vector4(0.82f, 0.73f, 0.44f, 1),
+                SyncPhase.Retry or SyncPhase.Upgrade => new Vector4(0.90f, 0.51f, 0.40f, 1),
+                _ => new Vector4(0.53f, 0.70f, 0.85f, 1),
+            };
+        ImGui.PushStyleColor(ImGuiCol.Text, color);
+        ImGui.TextWrapped("Sync: " + (progress?.Summary(now) ?? "Connecting · waiting for first check"));
+        ImGui.PopStyleColor();
+        if (progress is not null)
+        {
+            ImGui.TextDisabled(progress.LastSuccessSummary(now));
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip($"{progress.Detail}\nDownloaded {progress.DownloadBytes / 1000.0:F1} KB · uploaded {progress.UploadBytes / 1000.0:F1} KB\nApplied counts new invitations and updates. Zero changes is normal when nothing changed.\nHidden/past filters and personal deletions can keep fetched invitations off your calendar. Use Sync > Restore deleted shared invites to undo deletions.");
+        }
     }
 
     private void DrawDropPast()
@@ -2557,10 +2693,11 @@ public sealed class CalendarWindow : Window
         this.DrawWrappingButton("Delete past sync", syncRight, ref syncContinued, () => this.prompt.Ask(ClearTarget.SyncPast));
         if (ImGui.Button("Sync now##sync-now"))
             this.requestSyncNow?.Invoke();
-        if (!string.IsNullOrWhiteSpace(book.SyncStatus))
+        var displayedStatus = this.syncStatusBuffer.Current?.Status;
+        if (!string.IsNullOrWhiteSpace(displayedStatus))
         {
             ImGui.SameLine();
-            ImGui.TextUnformatted(book.SyncStatus);
+            ImGui.TextUnformatted(displayedStatus);
         }
 
         var autoAccept = book.Informedaholic;
@@ -2605,6 +2742,9 @@ public sealed class CalendarWindow : Window
         if (book.RelayStatus == RelayReach.OutOfDate)
             ImGui.TextWrapped("Update Shout Calendar and Shout Calendar Sync so shared invites stay current.");
 
+        if (!SyncRelays.PublicConfigured && (book.RelayChoice == SyncRelays.PublicLabel || book.BackupRelayChoice == SyncRelays.PublicLabel))
+            ImGui.TextWrapped("Public relay is not configured in this build. Install a configured release, or choose your own primary and backup relays.");
+
         if (book.RelayChoice == SyncRelays.CustomLabel)
         {
             var host = book.RelayHost;
@@ -2613,12 +2753,42 @@ public sealed class CalendarWindow : Window
             var port = book.RelayPort;
             if (ImGui.InputInt("Relay port", ref port))
                 book.RelayPort = port < 1 ? 0 : port;
-            var mirror = book.MirrorRelay;
-            if (ImGui.Checkbox("Country mirror##sync-mirror", ref mirror))
-                book.MirrorRelay = mirror;
-            ImGui.TextWrapped("A private group stays on this relay. A country mirror is tried first, and sync uses the public relay when the mirror does not answer.");
+            ImGui.TextWrapped("Your custom relay is tried first. Public relay is the default backup. Choose Off below to keep a private group on its own relay.");
         }
 
+        if (ImGui.CollapsingHeader("Backup relay · " + book.BackupRelayChoice + "##backup-relay"))
+        {
+            ImGui.SetNextItemWidth(180f);
+            if (ImGui.BeginCombo("Backup", book.BackupRelayChoice))
+            {
+                foreach (var choice in new[] { SyncRelays.PublicLabel, SyncRelays.CustomLabel, SyncRelays.OffLabel })
+                    if (ImGui.Selectable(choice, choice == book.BackupRelayChoice)) book.BackupRelayChoice = choice;
+                ImGui.EndCombo();
+            }
+            if (book.BackupRelayChoice == SyncRelays.CustomLabel)
+            {
+                var backup = book.BackupRelayHost;
+                if (ImGui.InputText("Backup address", ref backup, 200)) book.BackupRelayHost = backup.Trim();
+                var port = book.BackupRelayPort;
+                if (ImGui.InputInt("Backup port", ref port)) book.BackupRelayPort = Math.Clamp(port, 1, 65535);
+            }
+            if (book.Backup is not null && book.DistinctBackup is null)
+                ImGui.TextWrapped("Primary and backup are the same relay; only one connection is used.");
+            ImGui.TextWrapped("On an outage, eligible Shout/Yell invitations are sent to the backup. Public fallback makes those invitations available on the public relay. Choose Off to disable fallback.");
+            ImGui.TextWrapped("Requires a separately operated relay with replicated data. Saved invitations remain available offline. A backup cannot recover events it never received.");
+        }
+        ImGui.Separator();
+        if (ImGui.Button("Refresh details##sync-resync")) this.requestSyncResync?.Invoke();
+        ImGui.TextWrapped("Checks again for new information. Your accepted, hidden, declined and deleted choices are preserved.");
+        if (ImGui.Button("Restore deleted shared invites##sync-restore"))
+        {
+            book.PrepareDebugResync();
+            this.session.DropPastEvents = false;
+            this.session.ShowPastSync = true;
+            this.save();
+            this.requestSyncResync?.Invoke();
+        }
+        ImGui.TextWrapped("Restore clears shared deletion choices, shows past shared events and turns off automatic past deletion. It can only recover invitations the relay still retains. It does not restore local-only events or override hidden/declined choices.");
         ImGui.Separator();
         ImGui.TextUnformatted("Limits");
         var hold = book.HoldOffSeconds;
@@ -2627,21 +2797,20 @@ public sealed class CalendarWindow : Window
         book.Limits.MaxConnections = this.Limit("Connections", book.Limits.MaxConnections);
         book.Limits.BytesPerSecond = this.MegabitsPerSecond(book.Limits.BytesPerSecond, "Download (Mb/s) (Speed cap)");
         book.Limits.UploadBytesPerSecond = this.MegabitsPerSecond(book.Limits.UploadBytesPerSecond, "Upload (Mb/s) (Speed cap)");
-        ImGui.TextWrapped("Download is how much shared data to keep each pass. Upload is how much of your shouts to send each pass. Passes are about ten seconds apart, and upload starts at 1 Mb/s.");
+        ImGui.TextWrapped("Download and upload pace shared data with a one-second burst. Passes are about ten seconds apart; upload starts at 1 Mb/s and larger backlogs fill over several passes. The buffer budget limits serialized shared data, not all game memory.");
         book.Limits.MaxStoredBytes = this.Megabytes(book.Limits.MaxStoredBytes, "Stored size (MB)");
-        book.Limits.MaxItemsPerTick = this.Limit("Items per tick", book.Limits.MaxItemsPerTick);
-        book.Limits.MaxMemoryBytes = this.Megabytes(book.Limits.MaxMemoryBytes, "Memory (MB)");
+        book.Limits.MaxItemsPerTick = this.Limit("Invites per sync pass", book.Limits.MaxItemsPerTick);
+        ImGui.TextWrapped("This limits new or updated invites applied each pass, not the size of the relay catalog download.");
+        book.Limits.MaxMemoryBytes = this.Megabytes(book.Limits.MaxMemoryBytes, "Buffer budget (MB)");
         this.MaybeTipSyncLimits(book);
 
-        if (ImGui.CollapsingHeader("Testing##sync-testing"))
+        if (ImGui.CollapsingHeader("Diagnostics##sync-testing"))
         {
-            if (ImGui.Button("Re-sync from relay##sync-resync"))
-                this.requestSyncResync?.Invoke();
-            ImGui.TextWrapped("Forgets local dismissals, then pulls the relay again. Current invites are applied first, then past ones, under the same Limits. Heavier than Sync now. Both run in the background.");
             var debug = book.DebugPerf;
             if (ImGui.Checkbox("Performance log##sync-perf", ref debug))
                 book.DebugPerf = debug;
-            ImGui.TextWrapped("Off by default. Each fetch pass records whether sync is keeping up, and the counts next to your limits.");
+            ImGui.TextWrapped("Off by default. Each pass records catalog invites for your selected worlds, downloaded bytes, applied changes, and invites waiting for later passes. An unchanged cached catalog can download 0 bytes.");
+            ImGui.TextWrapped("Stored locally, including in the Dalamud log when enabled. These samples contain counts, timing and transfer sizes, not invitation text. Nothing is sent to an assistant. Zero downloaded bytes can mean an unchanged cached catalog.");
             var perf = book.CopyPerf();
             if (perf.Length > 0)
             {
@@ -2810,25 +2979,41 @@ public sealed class CalendarWindow : Window
     private bool OnViewedWorld(SyncBook book, SyncAnnouncement item) =>
         book.Worlds.IsViewing(ListedWorld(item));
 
-    private void DrawSyncDetail(DayLine line)
+    private void DrawMessageFold(string id, string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return;
+        if (!ImGui.CollapsingHeader($"Message##folder-msg-{id}"))
+            return;
+        this.DrawNote(text, EventTitle.Choose(text));
+    }
+
+    private void DrawSyncDetail(DayLine line, bool foldMessage = false)
     {
         var book = SyncGate.Panel;
-        var item = book?.CopyEvents().FirstOrDefault(row => row.Id == line.SyncId);
+        var item = book?.Events.FirstOrDefault(row => row.Id == line.SyncId);
         if (item is null)
         {
             this.selectedLine = null;
             return;
         }
 
-        this.DrawInviteGlanceText(item.Text, item.Date, SyncWhen(item), ListedWorld(item), "");
+        this.DrawInviteGlanceText(item.Text, SyncDay(item), SyncWhen(item), ListedWorld(item), item.Place);
         this.DrawClockFix(
             "sync-" + item.Id,
-            item.Date,
+            SyncDay(item),
             SyncWhen(item),
-            (date, time) => book!.SetClock(item.Id, date, time));
+            (date, time) =>
+            {
+                book!.SetClock(item.Id, date, time, out var errors);
+                return errors;
+            });
         ImGui.Separator();
-        ImGui.TextDisabled("Message");
-        this.DrawNote(item.Text, EventTitle.Choose(item.Text));
+        if (!foldMessage)
+        {
+            ImGui.TextDisabled("Message");
+            this.DrawNote(item.Text, (item.Title.Length > 0 ? item.Title : EventTitle.Choose(item.Text)));
+        }
         if ((item.IsSyncPending || item.Hidden) && ImGui.SmallButton($"Accept##sync-detail-{item.Id}"))
             book!.AcceptRemote(item.Id);
         if (item.IsSyncPending)
@@ -2863,11 +3048,9 @@ public sealed class CalendarWindow : Window
         }
 
         ImGui.SameLine();
-        if (ImGui.SmallButton($"Delete##sync-detail-{item.Id}") && book!.Dismiss(item.Id))
-        {
-            this.session.SetSyncPinned(item.Id, false);
-            this.selectedLine = null;
-        }
+        var original = SyncClock.Entry(item);
+        var occurrence = line.OnDay is DateOnly shown ? SyncClock.OnDate(original, shown) : original;
+        this.DrawDelete(original, occurrence?.Date, $"sync-detail-{item.Id}", book);
     }
 
     private void DrawInviteGlance(CalendarEntry entry)
@@ -2877,18 +3060,23 @@ public sealed class CalendarWindow : Window
             ImGui.TextUnformatted(title);
         this.DrawKind(entry.EventText);
 
+        if (LiveInvite.IsRecent(entry.EventText, entry.DetectedAt, DateTimeOffset.UtcNow))
+            ImGui.TextWrapped("Assembling now · heard " + entry.DetectedAt.LocalDateTime.ToString("HH:mm") + ". No end time was advertised.");
         this.FactLine("Date", this.DateLabel(entry));
         this.FactLine("Time", WhenText(entry));
         if (this.editingId != entry.Id)
         {
+            var original = this.session.Log.Entries.FirstOrDefault(saved => saved.Id == entry.Id) ?? entry;
+            var clock = ClockInput.FromEntry(original, TimeZoneInfo.Local);
             this.DrawClockFix(
                 "local-" + entry.Id,
-                entry.Date?.ToString("yyyy-MM-dd") ?? "",
-                WhenText(entry),
+                clock.DateText,
+                clock.TimeText,
                 (date, time) =>
                 {
-                    if (this.session.Log.Revise(entry.Id, entry.EventText, date, time, entry.Place, DateTimeOffset.UtcNow, this.session.Places, this.session.Channels))
-                        this.save();
+                    this.session.Log.TryRevise(original.Id, original.EventText, date, time, original.Place, original.Color,
+                        DateTimeOffset.UtcNow, this.session.Places, this.session.Channels, out var errors);
+                    return errors;
                 });
         }
         var spot = HousingTravel.FindVenue(entry.Place, entry.EventText, entry.Ward, entry.Server, entry.SpeakerWorld);
@@ -3153,9 +3341,12 @@ public sealed class CalendarWindow : Window
 
     private static readonly HashSet<string> EmptyResets = new();
 
-    private bool IncludeLocal(CalendarEntry entry)
+    private bool IncludeLocal(CalendarEntry entry, bool pendingList = false)
     {
+        if (entry.SeriesDeleted) return false;
         if (entry.Hidden && !this.session.ShowHidden)
+            return false;
+        if (!this.session.ShowsChannel(entry.Channel))
             return false;
         if (!this.session.ShowPastLocal && PastEvents.Ended(entry, DateTime.Now))
             return false;
@@ -3170,8 +3361,8 @@ public sealed class CalendarWindow : Window
         }
 
         if (SyncGate.Panel is not SyncBook book)
-            return true;
-        return book.Worlds.ShowsLocal(entry);
+            return !pendingList || this.ShowsPendingWorld(entry.EventText, entry.Server);
+        return pendingList ? this.ShowsPendingWorld(entry.EventText, entry.Server) : book.Worlds.ShowsLocal(entry);
     }
 
     private SyncAnnouncement[] FrameForDraw(SyncBook? book)
@@ -3180,24 +3371,29 @@ public sealed class CalendarWindow : Window
         if (book is null || all.Length == 0)
             return all;
         var standing = this.StandingWorld();
-        var showAll = this.session.ShowAllServers;
         var key = string.Join(
             '|',
             this.session.Log.Revision.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            SyncStamp(all).ToString(System.Globalization.CultureInfo.InvariantCulture),
-            showAll,
+            SyncDisplay.Stamp(all).ToString(System.Globalization.CultureInfo.InvariantCulture),
+            this.session.PendingScope,
             standing,
             this.session.ShowPastSync,
+            this.ChannelScope(),
             DateTime.Now.ToString("yyyyMMddHHmm", System.Globalization.CultureInfo.InvariantCulture),
-            string.Join(',', book.Worlds.Viewing()));
+            string.Join(',', book.Worlds.Viewing()), string.Join(',', book.Worlds.Fetched()));
         if (key == this.frameKey)
             return this.framed;
         var kept = new List<SyncAnnouncement>(all.Length);
         foreach (var item in all)
         {
-            if (item.Declined || this.DuplicateOfLocal(item))
+            if (item.SeriesDeleted || item.Declined || this.DuplicateOfLocal(item))
+                continue;
+            if (!this.session.ShowsChannel(item.Channel == 0 ? ShoutHarvest.ShoutChannel : item.Channel))
                 continue;
             if (!this.session.ShowPastSync && PastEvents.Ended(item, DateTime.Now))
+                continue;
+            var channel = item.Channel == 0 ? ShoutHarvest.ShoutChannel : item.Channel;
+            if (!ShoutHarvest.IsSharedEvent(item.Text, channel, DateTimeOffset.Now))
                 continue;
             if (!PlayableWorlds.TryCanonical(item.World, out var world))
             {
@@ -3214,7 +3410,7 @@ public sealed class CalendarWindow : Window
                 continue;
             }
 
-            if (book.Worlds.DrawnPending(world, showAll, standing))
+            if (book.Worlds.PendingVisible(ListedWorld(item), this.session.PendingScope, standing) || book.Worlds.IsViewing(ListedWorld(item)))
                 kept.Add(item);
         }
 
@@ -3236,15 +3432,10 @@ public sealed class CalendarWindow : Window
 
     private bool ShowsPendingWorld(string? text, string? storedWorld)
     {
-        var standing = this.StandingWorld();
+        // Pending scope belongs to Sync; a saved scope must not hide locally collected invites while detached.
         if (SyncGate.Panel is not SyncBook book)
-            return this.session.ShowAllServers || ServerNames.ForServer(text, storedWorld, standing);
-        if (PlayableWorlds.TryNamedWorld(storedWorld, out var stored) && !book.Worlds.SharesPending(stored, true, standing))
-            return false;
-        var world = NamedWorld(text, storedWorld);
-        if (world.Length == 0)
-            return ServerNames.ForServer(text, storedWorld, standing);
-        return book.Worlds.DrawnPending(world, this.session.ShowAllServers, standing);
+            return true;
+        return book.Worlds.PendingVisible(NamedWorld(text, storedWorld), this.session.PendingScope, this.StandingWorld());
     }
 
     private static string NamedWorld(string? text, string? storedWorld)
@@ -3254,59 +3445,51 @@ public sealed class CalendarWindow : Window
         return PlayableWorlds.TryNamedWorld(storedWorld, out var stored) ? stored : "";
     }
 
-    private bool PendingOnThisCalendar(SyncBook book, SyncAnnouncement item)
+    private bool PendingOnThisCalendar(SyncBook book, SyncAnnouncement item) =>
+        book.Worlds.PendingVisible(ListedWorld(item), this.session.PendingScope, this.StandingWorld());
+
+    private bool IncludeSync(SyncAnnouncement item)
     {
-        var standing = this.StandingWorld();
-        if (PlayableWorlds.TryCanonical(item.World, out var listed) && !book.Worlds.SharesPending(listed, true, standing))
+        var book = SyncGate.Panel;
+        if (book is null || !item.FromSync || item.Declined)
             return false;
-        var world = NamedWorld(item.Text, item.World);
-        if (world.Length == 0)
-            return ServerNames.ForServer(item.Text, item.World, standing);
-        return book.Worlds.DrawnPending(world, this.session.ShowAllServers, standing);
+        if (PlayableWorlds.TryCanonical(item.World, out var world) && !book.Worlds.SharesPending(world, true, this.StandingWorld()))
+            return false;
+        if (item.Hidden && !this.session.ShowHidden)
+            return false;
+        if (item.Accepted)
+        {
+            if (!this.session.ShowSyncAccepted || !this.OnViewedWorld(book, item))
+                return false;
+        }
+        else if (!this.session.ShowSyncUnaccepted || !book.Worlds.IsViewing(ListedWorld(item)))
+        {
+            return false;
+        }
+
+        var modes = item.Channel == SharePolicy.YellChannel ? book.Settings.Yell : book.Settings.Shout;
+        return item.Accepted || modes.Add;
     }
 
     private void AddSyncLines(DateOnly date, List<DayLine> lines)
     {
-        var book = SyncGate.Panel;
-        if (book is null)
-            return;
-        var standing = this.StandingWorld();
         foreach (var item in this.syncFrame)
         {
-            if (!item.FromSync || item.Declined)
+            if (!this.IncludeSync(item))
                 continue;
-            if (PlayableWorlds.TryCanonical(item.World, out var world) && !book.Worlds.SharesPending(world, true, standing))
-                continue;
-            if (item.Hidden && !this.session.ShowHidden)
-                continue;
-            if (item.Accepted)
-            {
-                if (!this.session.ShowSyncAccepted || !this.OnViewedWorld(book, item))
-                    continue;
-            }
-            else if (!this.session.ShowSyncUnaccepted || !this.ShowsPendingWorld(item.Text, item.World) || !this.PendingOnThisCalendar(book, item))
-            {
-                continue;
-            }
-
-            var modes = item.Channel == SharePolicy.YellChannel ? book.Settings.Yell : book.Settings.Shout;
-            if (!item.Accepted && !modes.Add)
-                continue;
-            if (!DateOnly.TryParseExact(item.Date, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var day))
-                continue;
-            var walls = ZoneClock.Walls(item.Text);
-            TimeOnly? time = TimeOnly.TryParseExact(item.Time, "HH:mm", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var clock)
-                ? clock
-                : walls.Count > 0 ? walls[0].Time : null;
-            TimeOnly? end = walls.Count >= 2 ? walls[1].Time : null;
+            var entry = this.SharedEntry(item);
+            var occurrence = SyncClock.OnDate(entry, date)
+                ?? (date > DateOnly.MinValue ? SyncClock.OnDate(entry, date.AddDays(-1)) : null);
+            if (occurrence is null) continue;
+            var shown = ZoneClock.ShownRange(occurrence, TimeZoneInfo.Local);
+            var day = shown.Date;
+            var time = shown.Start;
+            var end = shown.End;
             var overnight = Overnight.Is(time, end);
-            if (!Overnight.Covers(date, day, time, end))
-                continue;
-            var named = EventTitle.Readable(EventTitle.Choose(item.Text));
-            var title = named.Length > 0 ? named : item.Text;
-            if (overnight && time is TimeOnly begin && end is TimeOnly stop)
-                title = $"{begin:HH:mm}–{stop:HH:mm} {title}";
-            var clockShown = date == day ? time : end;
+            if (!Overnight.Covers(date, day, time, end)) continue;
+            var named = EventTitle.Readable((item.Title.Length > 0 ? item.Title : EventTitle.Choose(item.Text)));
+            var title = (LiveInvite.IsRecent(item.Text, item.ObservedAt, DateTimeOffset.UtcNow) ? "Now · " : "") + (named.Length > 0 ? named : item.Text);
+            var clockShown = date == day ? time : overnight ? TimeOnly.MinValue : end;
             lines.Add(new DayLine(clockShown, overnight ? 0 : clockShown is null ? 2 : 1, title, item.Text, null, null, overnight, null, item.ColorToken, item.Id, date, end, this.session.SyncPinned(item.Id)));
         }
     }

@@ -82,7 +82,7 @@ public static class SyncExport
             var kind = entry.NoteUpdated
                 ? ContributionKind.NoteUpdated
                 : entry.Accepted ? ContributionKind.Accepted : ContributionKind.Unaccepted;
-            if (entry.Manual || !SharePolicy.ShouldContribute(entry.Channel, kind, book.Settings))
+            if (entry.SeriesDeleted || entry.Manual || !SharePolicy.ShouldContribute(entry.Channel, kind, book.Settings))
                 continue;
             var when = entry.DetectedAt == default ? DateTimeOffset.UtcNow : entry.DetectedAt;
             if (!ShoutHarvest.IsSharedEvent(entry.EventText, entry.Channel, when, places))

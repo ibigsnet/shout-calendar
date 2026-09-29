@@ -12,6 +12,7 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="../ShoutCalendar/PluginConfig.cs" Link="PluginConfig.cs" />
     <ProjectReference Include="..\ShoutCalendar.Core\ShoutCalendar.Core.csproj" />
   </ItemGroup>
 </Project>

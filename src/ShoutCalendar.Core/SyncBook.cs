@@ -34,6 +34,9 @@ public sealed class SyncSnapshot
     public bool Informedaholic { get; set; }
 
     public bool MirrorRelay { get; set; }
+    public string BackupRelayHost { get; set; } = "";
+    public int BackupRelayPort { get; set; } = 443;
+    public string BackupRelayChoice { get; set; } = "";
 
     /// <summary>When set, each fetch pass appends a performance line. Off unless chosen.</summary>
     public bool DebugPerf { get; set; }
@@ -93,8 +96,21 @@ public sealed class SyncBook
     /// <summary>When set, a shared invite is accepted instead of waiting on the pending list.</summary>
     public bool Informedaholic { get; set; }
 
-    /// <summary>When set, a custom relay is a nearer copy. If it does not answer, sync uses the public relay.</summary>
+    /// <summary>Legacy preference retained for old saves. BackupRelayChoice controls failover.</summary>
     public bool MirrorRelay { get; set; }
+    public string BackupRelayHost { get; set; } = "";
+    public int BackupRelayPort { get; set; } = 443;
+    public string BackupRelayChoice { get; set; } = SyncRelays.PublicLabel;
+
+    public RelayEndpoint? Backup => this.BackupRelayChoice switch
+    {
+        SyncRelays.PublicLabel => new(SyncRelays.PublicHost, SyncRelays.PublicPort),
+        SyncRelays.CustomLabel when !string.IsNullOrWhiteSpace(this.BackupRelayHost) => new(this.BackupRelayHost, this.BackupRelayPort),
+        _ => null,
+    };
+
+    public RelayEndpoint? DistinctBackup => this.Backup is { } backup
+        && !SyncRelays.SameEndpoint(this.RelayHost, this.RelayPort, backup.Host, backup.Port) ? backup : null;
 
     /// <summary>Last relay check. Not stored. Detach clears it.</summary>
     public string RelayStatus { get; set; } = "";
@@ -124,11 +140,30 @@ public sealed class SyncBook
             return;
         lock (this.perfGate)
         {
-            this.perfLog.Add(line.Trim());
+            this.perfLog.Add(SyncRelays.Redact(line.Trim()));
             var extra = this.perfLog.Count - SyncPerf.Keep;
             if (extra > 0)
                 this.perfLog.RemoveRange(0, extra);
         }
+    }
+
+    public SyncProgress? Progress { get; private set; }
+
+    public void PublishStatus(string status, string? performanceLine = null, SyncProgress? progress = null)
+    {
+        this.SyncStatus = SyncRelays.Redact(status);
+        if (progress is not null) this.Progress = progress with
+        {
+            Relay = SyncRelays.Redact(progress.Relay), Detail = SyncRelays.Redact(progress.Detail),
+            LastSuccess = progress.LastSuccess ?? this.Progress?.LastSuccess,
+        };
+        if (!string.IsNullOrWhiteSpace(performanceLine)) this.NotePerf(performanceLine);
+    }
+
+    public bool RestoreIfEmpty(string? json)
+    {
+        if (!SyncResume.Choose(this.ToJson(), json).RestoreStore) return false;
+        return this.ApplyJson(json);
     }
 
     public void ClearPerf()
@@ -167,7 +202,13 @@ public sealed class SyncBook
     public void PrepareDebugResync()
     {
         lock (this.eventsGate)
+        {
             this.DismissedKeys.Clear();
+            foreach (var item in this.Events)
+            {
+                item.ExcludedDates.Clear(); item.RepeatUntil = null; item.SeriesDeleted = false;
+            }
+        }
         this.SyncStatus = "Re-syncing from relay…";
     }
 
@@ -176,8 +217,8 @@ public sealed class SyncBook
         lock (this.eventsGate)
             this.Events.RemoveAll(item => item.FromSync && !item.HarvestedLocally);
         lock (this.eventsGate)
-        foreach (var item in this.Events)
-            item.FromSync = false;
+            foreach (var item in this.Events)
+                item.FromSync = false;
         this.Settings = new ShareSettings();
         this.SettingsStored = false;
         this.ShowSync = true;
@@ -187,6 +228,10 @@ public sealed class SyncBook
         this.HoldOffSeconds = 60;
         this.Informedaholic = false;
         this.MirrorRelay = false;
+        this.BackupRelayHost = "";
+        this.BackupRelayPort = SyncRelays.PublicPort;
+        this.BackupRelayChoice = SyncRelays.PublicLabel;
+        this.Progress = null;
         this.DebugPerf = false;
         this.ClearPerf();
         this.RelayStatus = "";
@@ -207,6 +252,22 @@ public sealed class SyncBook
         if (item is null)
             return false;
         return EventCategories.TrySet(item, label);
+    }
+
+    public bool Delete(string id, DateOnly occurrence, DeleteScope scope)
+    {
+        lock (this.eventsGate)
+        {
+            var item = this.Events.FirstOrDefault(row => row.Id == id);
+            if (item is null) return false;
+            var entry = SyncClock.Entry(item);
+            if (entry.Repeat is null) return this.DismissUnlocked(id);
+            var changed = EventDeletion.Apply(entry, occurrence, scope);
+            item.ExcludedDates = changed.ExcludedDates?.ToList() ?? new();
+            item.RepeatUntil = changed.RepeatUntil;
+            item.SeriesDeleted = changed.SeriesDeleted;
+            return true;
+        }
     }
 
     public bool Dismiss(string id)
@@ -259,6 +320,7 @@ public sealed class SyncBook
 
     private void RememberDismissed(SyncAnnouncement item)
     {
+        if (!string.IsNullOrEmpty(item.Id) && !this.DismissedKeys.Contains(item.Id)) this.DismissedKeys.Add(item.Id);
         var key = string.IsNullOrEmpty(item.ContentKey) ? SyncMerge.Key(item) : item.ContentKey;
         if (!this.DismissedKeys.Contains(key))
             this.DismissedKeys.Add(key);
@@ -330,6 +392,7 @@ public sealed class SyncBook
         var text = $"{entry.EventText} {entry.Place}";
         foreach (var item in this.Events)
         {
+            if (!EventIdentity.Compatible(entry, item)) continue;
             if (!EventIdentity.SameRepost(entry, item)
                 && !EventIdentity.SameShout(item.World, item.Text, world, text))
                 continue;
@@ -349,7 +412,7 @@ public sealed class SyncBook
         var gone = new HashSet<string>(keys.Where(key => !string.IsNullOrWhiteSpace(key)), StringComparer.OrdinalIgnoreCase);
         if (gone.Count == 0)
             return;
-        this.Events.RemoveAll(item => gone.Contains(item.ContentKey) || gone.Contains(SyncMerge.Key(item)));
+        this.Events.RemoveAll(item => gone.Contains(item.Id) || gone.Contains(item.ContentKey) || gone.Contains(SyncMerge.Key(item)) || gone.Contains(SyncMerge.LegacyKey(item)));
         foreach (var key in gone)
         {
             if (!this.DismissedKeys.Contains(key))
@@ -363,35 +426,34 @@ public sealed class SyncBook
             return this.AcceptRemoteUnlocked(id);
     }
 
-    public bool SetClock(string id, string dateText, string timeText)
+    public bool SetClock(string id, string dateText, string timeText) => this.SetClock(id, dateText, timeText, out _);
+
+    public bool SetClock(string id, string dateText, string timeText, out ClockInputErrors errors, TimeZoneInfo? zone = null)
     {
+        if (!ClockInput.TryParse(dateText, timeText, out var input, out errors)) return false;
+        zone ??= TimeZoneInfo.Local;
         lock (this.eventsGate)
         {
             var item = this.Events.FirstOrDefault(row => row.Id == id);
             if (item is null)
+            {
+                errors = new ClockInputErrors(Message: "This invite is no longer available.");
                 return false;
-            var changed = false;
-            if (DateOnly.TryParseExact(dateText.Trim(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day))
-            {
-                var written = day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-                if (!string.Equals(item.Date, written, StringComparison.Ordinal))
-                {
-                    item.Date = written;
-                    changed = true;
-                }
             }
-
-            if (ZoneClock.TryTyped(timeText, out var start, out _))
-            {
-                var written = start.ToString("HH:mm", CultureInfo.InvariantCulture);
-                if (!string.Equals(item.Time, written, StringComparison.Ordinal))
-                {
-                    item.Time = written;
-                    changed = true;
-                }
-            }
-
-            return changed;
+            if (input == ClockInput.FromEntry(SyncClock.Entry(item, zone), zone)) return false;
+            if (!input.ValidateZone(zone, out errors)) return false;
+            item.Date = input.DateText;
+            item.Time = input.Start?.ToString("HH:mm", CultureInfo.InvariantCulture) ?? "";
+            item.End = input.End?.ToString("HH:mm", CultureInfo.InvariantCulture) ?? "";
+            item.SourceTimeZone = input.Start is null ? "" : zone.Id;
+            item.StartUtc = SyncClock.Instant(input.Date, input.Start, item.SourceTimeZone);
+            item.EndUtc = SyncClock.Instant(SyncClock.EndDate(input.Date, input.Start, input.End), input.End, item.SourceTimeZone);
+            if (EventRepeat.Parse(item.Repeat) is EventRepeat repeat && input.Date is DateOnly anchor)
+                item.Repeat = (repeat with { Weekday = anchor.DayOfWeek }).Store();
+            item.NoteUpdated = true;
+            item.ClockEditedLocally = true;
+            item.ContentKey = SyncMerge.Key(item);
+            return true;
         }
     }
 
@@ -436,51 +498,71 @@ public sealed class SyncBook
             this.ApplyTombstonesUnlocked(incoming.Where(item => item.Id.StartsWith("gone:", StringComparison.Ordinal)).Select(item => item.ContentKey));
         lock (this.eventsGate)
         {
-        var now = DateTime.Now;
-        var shareable = SyncFill.Prioritize(
-            incoming
-                .Where(item => !item.Id.StartsWith("gone:", StringComparison.Ordinal))
-                .Where(item => ShareFormat.Accepts(item.ShareFormat))
-                .Where(item => SharePolicy.ShouldReceive(item.Channel, this.Settings))
-                .Where(item => PlayableWorlds.TryCanonical(item.World, out _))
-                .Where(item => ShoutHarvest.IsSharedEvent(item.Text, item.Channel, DateTimeOffset.UtcNow, places))
-                .Where(item => !this.AlreadyHeld(item))
-                .Where(item => !this.DismissedKeys.Contains(SyncMerge.Key(item))),
-            now);
-        var admitted = SyncBudget.Admit(
-            shareable,
-            item => item.PayloadBytes,
-            this.Limits,
-            openConnections,
-            bytesAlreadyThisSecond: 0,
-            storedBytes: this.StoredBytes,
-            memoryBytes: this.StoredBytes);
-        this.LastFill = SyncFill.Measure(shareable, admitted, now, TimeSpan.Zero);
-        var added = 0;
-        foreach (var item in admitted)
-        {
-            if (ServerNames.TryAdvertised(item.Text, out var advertised))
-                item.World = advertised;
-            if (!PlayableWorlds.TryCanonical(item.World, out var world))
-                continue;
-            if (!this.Worlds.Fetched().Contains(world, StringComparer.Ordinal))
-                continue;
-            item.World = world;
-            item.FromSync = true;
-            item.HarvestedLocally = false;
-            item.Accepted = false;
-            if (SyncMerge.Apply(this.Events, item) == SyncMergeResult.Duplicate)
-                continue;
-            added++;
-        }
+            var now = DateTime.Now;
+            var fetchedWorlds = this.Worlds.Fetched().ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var dismissed = this.DismissedKeys.ToHashSet(StringComparer.Ordinal);
+            var held = new Dictionary<string, (int Revision, DateTimeOffset Observed)>(StringComparer.Ordinal);
+            foreach (var row in this.Events)
+            {
+                foreach (var key in new[] { row.SourceKey, SyncMerge.Key(row) })
+                {
+                    if (string.IsNullOrEmpty(key)) continue;
+                    if (!held.TryGetValue(key, out var prior)) held[key] = (row.Revision, row.ObservedAt);
+                    else held[key] = (Math.Max(prior.Revision, row.Revision), prior.Observed > row.ObservedAt ? prior.Observed : row.ObservedAt);
+                }
+            }
+            bool AlreadyKnown(SyncAnnouncement item) => held.TryGetValue(SyncMerge.Key(item), out var prior)
+                && item.Revision <= prior.Revision && item.ObservedAt <= prior.Observed;
+            var shareable = SyncFill.Prioritize(
+                incoming
+                    .Where(item => !item.Id.StartsWith("gone:", StringComparison.Ordinal))
+                    .Where(RelayLog.Valid)
+                    .Where(item => SharePolicy.ShouldReceive(item.Channel, this.Settings))
+                    .Where(item => PlayableWorlds.TryCanonical(item.World, out _))
+                    .Where(item => fetchedWorlds.Contains(item.World)
+                        || this.Events.Any(row => row.Id == item.Id && SyncMerge.Same(row, item)))
+                    .Where(item => !AlreadyKnown(item))
+                    .Where(item => !dismissed.Contains(item.Id) && !dismissed.Contains(SyncMerge.Key(item))
+                        && !dismissed.Contains(SyncMerge.LegacyKey(item)))
+                    .Where(item => ShoutHarvest.IsSharedEvent(item.Text, item.Channel, DateTimeOffset.UtcNow, places)),
+                now);
+            var admitted = new List<SyncAnnouncement>();
+            var receivedBytes = 0;
+            var added = 0;
+            var storedBytes = this.StoredBytes;
+            foreach (var item in shareable)
+            {
+                if (admitted.Count >= this.Limits.Clamp().MaxItemsPerTick) break;
+                var replaced = SyncMerge.PrepareReplacement(this.Events, item);
+                if (SyncBudget.Admit([item], row => row.PayloadBytes, this.Limits, openConnections,
+                    receivedBytes, storedBytes, storedBytes, _ => replaced?.PayloadBytes ?? 0).Count == 0) continue;
+                if (ServerNames.TryAdvertised(item.Text, out var advertised))
+                    item.World = advertised;
+                if (!PlayableWorlds.TryCanonical(item.World, out var world))
+                    continue;
+                if (replaced is null && !this.Worlds.Fetched().Contains(world, StringComparer.Ordinal))
+                    continue;
+                item.World = world;
+                item.FromSync = true;
+                item.HarvestedLocally = false;
+                item.Accepted = false;
+                admitted.Add(item);
+                receivedBytes += item.PayloadBytes;
+                var oldBytes = replaced?.PayloadBytes ?? 0;
+                if (SyncMerge.Apply(this.Events, item) == SyncMergeResult.Duplicate)
+                    continue;
+                storedBytes += item.PayloadBytes - oldBytes;
+                added++;
+            }
 
-        this.FoldRepostsUnlocked();
+            this.LastFill = SyncFill.Measure(shareable, admitted, now, TimeSpan.Zero);
+            if (added > 0) this.FoldRepostsUnlocked();
 
-        if (this.Informedaholic)
-            this.AcceptAllRemoteUnlocked();
-        if (SyncFill.StatusTip(this.LastFill.Value) is string tip)
-            this.SyncStatus = tip;
-        return added;
+            if (this.Informedaholic)
+                this.AcceptAllRemoteUnlocked();
+            if (SyncFill.StatusTip(this.LastFill.Value) is string tip)
+                this.SyncStatus = tip;
+            return added;
         }
     }
 
@@ -491,7 +573,8 @@ public sealed class SyncBook
         {
             for (var j = i + 1; j < this.Events.Count;)
             {
-                if (!EventIdentity.SameRepost(this.Events[i], this.Events[j]))
+                if (!(EventIdentity.SameRepost(this.Events[i], this.Events[j])
+                    || SyncMerge.CanMergeAmong(this.Events, this.Events[i], this.Events[j])))
                 {
                     j++;
                     continue;
@@ -500,6 +583,7 @@ public sealed class SyncBook
                 SyncMerge.Combine(this.Events[i], this.Events[j]);
                 this.Events.RemoveAt(j);
                 removed++;
+                j = i + 1; // Enrichment may now identify a row skipped earlier in this pass.
             }
         }
 
@@ -509,7 +593,7 @@ public sealed class SyncBook
     private bool AlreadyHeld(SyncAnnouncement item)
     {
         var key = SyncMerge.Key(item);
-        return this.Events.Any(row => SyncMerge.Key(row) == key && item.Revision <= row.Revision);
+        return this.Events.Any(row => (row.SourceKey == key || SyncMerge.Key(row) == key) && item.Revision <= row.Revision && item.ObservedAt <= row.ObservedAt);
     }
 
     public string ToJson()
@@ -530,6 +614,9 @@ public sealed class SyncBook
             SyncStatus = this.SyncStatus,
             Informedaholic = this.Informedaholic,
             MirrorRelay = this.MirrorRelay,
+            BackupRelayHost = this.BackupRelayHost,
+            BackupRelayPort = this.BackupRelayPort,
+            BackupRelayChoice = this.BackupRelayChoice,
             DebugPerf = this.DebugPerf,
             PerfLog = this.CopyPerf().ToList(),
             Events = this.CopyEvents().ToList(),
@@ -539,7 +626,7 @@ public sealed class SyncBook
         return JsonSerializer.Serialize(snapshot, SnapshotJson.Options);
     }
 
-    public bool ApplyJson(string? json)
+    public bool ApplyJson(string? json, bool foldReposts = true)
     {
         if (string.IsNullOrWhiteSpace(json))
             return false;
@@ -564,9 +651,15 @@ public sealed class SyncBook
         this.RelayPort = snapshot.RelayPort < 1 ? 0 : snapshot.RelayPort;
         this.RelayChoice = string.IsNullOrWhiteSpace(snapshot.RelayChoice) ? SyncRelays.PublicLabel : snapshot.RelayChoice;
         this.HoldOffSeconds = snapshot.HoldOffSeconds < 0 ? 0 : snapshot.HoldOffSeconds;
-        this.SyncStatus = snapshot.SyncStatus ?? "";
+        this.SyncStatus = SyncRelays.Redact(snapshot.SyncStatus ?? "");
         this.Informedaholic = snapshot.Informedaholic;
         this.MirrorRelay = snapshot.MirrorRelay;
+        this.BackupRelayHost = snapshot.BackupRelayHost ?? "";
+        this.BackupRelayPort = Math.Clamp(snapshot.BackupRelayPort, 1, 65535);
+        this.BackupRelayChoice = snapshot.BackupRelayChoice is SyncRelays.PublicLabel or SyncRelays.CustomLabel or SyncRelays.OffLabel
+            ? snapshot.BackupRelayChoice
+            : string.IsNullOrWhiteSpace(this.BackupRelayHost) || SyncRelays.IsPublic(this.BackupRelayHost, this.BackupRelayPort)
+                ? SyncRelays.PublicLabel : SyncRelays.CustomLabel;
         this.DebugPerf = snapshot.DebugPerf;
         lock (this.perfGate)
         {
@@ -575,7 +668,7 @@ public sealed class SyncBook
             {
                 if (string.IsNullOrWhiteSpace(line))
                     continue;
-                this.perfLog.Add(line.Trim());
+                this.perfLog.Add(SyncRelays.Redact(line.Trim()));
             }
 
             var extra = this.perfLog.Count - SyncPerf.Keep;
@@ -605,24 +698,25 @@ public sealed class SyncBook
             this.Worlds.Select(snapshot.Selected);
         lock (this.eventsGate)
         {
-        this.Events.Clear();
-        foreach (var item in snapshot.Events ?? [])
-        {
-            if (string.IsNullOrWhiteSpace(item.Id))
-                continue;
-            this.Events.Add(item);
-        }
+            this.Events.Clear();
+            foreach (var item in snapshot.Events ?? [])
+            {
+                if (string.IsNullOrWhiteSpace(item.Id))
+                    continue;
+                item.ExcludedDates ??= new();
+                this.Events.Add(item);
+            }
 
-        this.DismissedKeys.Clear();
-        foreach (var key in snapshot.DismissedKeys ?? [])
-        {
-            if (!string.IsNullOrWhiteSpace(key) && !this.DismissedKeys.Contains(key))
-                this.DismissedKeys.Add(key);
-        }
+            this.DismissedKeys.Clear();
+            foreach (var key in snapshot.DismissedKeys ?? [])
+            {
+                if (!string.IsNullOrWhiteSpace(key) && !this.DismissedKeys.Contains(key))
+                    this.DismissedKeys.Add(key);
+            }
 
-        if (!string.IsNullOrWhiteSpace(snapshot.BookId))
-            this.BookId = snapshot.BookId;
-        this.FoldRepostsUnlocked();
+            if (!string.IsNullOrWhiteSpace(snapshot.BookId))
+                this.BookId = snapshot.BookId;
+            if (foldReposts) this.FoldRepostsUnlocked();
         }
 
         this.SettingsStored = true;

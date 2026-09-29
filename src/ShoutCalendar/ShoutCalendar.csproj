@@ -1,6 +1,6 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <Version>0.1.27</Version>
+    <Version>0.1.32</Version>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -9,6 +9,7 @@
     <Name>Shout Calendar</Name>
     <RepoUrl>https://github.com/ibigsnet/shout-calendar</RepoUrl>
     <Tags>utility</Tags>
+    <IconUrl>https://raw.githubusercontent.com/ibigsnet/shout-calendar/v0.1.32/images/icon.png</IconUrl>
     <Punchline>Turns FFXIV chat invites into a month calendar you accept yourself.</Punchline>
     <Description>Shout Calendar is the standalone calendar plugin. It listens to the chats you choose and keeps event invites on a month calendar until you accept them. It works without Shout Calendar Sync and does not send anything to other players. Install the optional Shout Calendar Sync companion to share public Shout and Yell invites.
 
@@ -21,7 +22,7 @@ The Resets tab adds Jumbo Cactpot, the weekly reset, and limited events such as 
 /shoutcalendar opens the calendar. /shoutcalendar test checks a line on your machine and does not send chat.
 
 Icon artwork was created with AI assistance using editable vector paths.</Description>
-    <Changelog>Past events stay off the calendar until show past is on, with one switch for local and one for sync. Pin keeps an invite at the top of that day. Pinned invites stay in time order, and the other invites follow below them. Reposts of the same party on the same night become one invite. Alarms due in the same minute share one chat line. Download and upload are marked as speed caps.</Changelog>
+    <Changelog>Local-only Pending hides Sync controls when Sync is absent. Last-success status includes elapsed seconds, minutes or hours; a 100 ms display buffer reduces flicker. Includes Appearance presets and expandable Colors, compact three-day view, improved recurring-event handling, and public-relay fallback.</Changelog>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\ShoutCalendar.Core\ShoutCalendar.Core.csproj" />

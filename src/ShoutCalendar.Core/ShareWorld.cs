@@ -9,6 +9,8 @@ public static class ShareWorld
             return advertised;
         if (PlayableWorlds.TryNamedWorld(namedInText, out var named))
             return named;
+        if (LiveInvite.IsGathering(shoutText) && PlayableWorlds.TryCanonical(heardOn, out var assembling))
+            return assembling;
         if (PlayableWorlds.TryCanonical(speakerHome, out var home))
             return home;
         if (PlayableWorlds.TryCanonical(heardOn, out var heard))
