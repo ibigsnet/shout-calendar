@@ -6,8 +6,6 @@ The installer name is Shout Calendar. The window title is FFXIV Shout Calendar. 
 
 License: GPL-3.0-or-later. See [LICENSE](LICENSE).
 
-The plugin icon was created with AI assistance using editable vector paths. Its PNG and SVG source are in `images/`.
-
 ## Install from Dalamud
 
 This is not on the official plugin list. A friend can add one custom repository URL. That URL is a plugin list, not a DLL or a zip.
@@ -21,7 +19,7 @@ In game:
    `https://raw.githubusercontent.com/ibigsnet/shout-calendar/main/pluginmaster.json`
 
 4. Click **+**, leave **Enabled** checked, then **Save and Close**.
-5. `/xlplugins`, search for **Shout Calendar**, and install it.
+5. `/xlplugins`, search for **Shout Calendar**, and install it. **Shout Calendar Sync** is on this same list. Install it after Shout Calendar when you want shared invites.
 
 Dalamud API level 15. `/shoutcalendar` opens the calendar. `/shoutcalendar test` checks a line on your machine and does not send chat.
 

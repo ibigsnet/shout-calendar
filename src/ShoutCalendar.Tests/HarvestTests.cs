@@ -255,26 +255,26 @@ public class HarvestTests
         var session = new CalendarSession(new DateOnly(2026, 9, 27));
         session.Places = new PlaceCatalog(["The Goblet", "Limsa Lominsa"]);
         var when = new DateTimeOffset(new DateTime(2026, 9, 27, 18, 0, 0));
-        Assert.False(session.TryAddShout("Any events going on today?", ShoutHarvest.ShoutChannel, when, "Natsuki Sasahara"));
+        Assert.False(session.TryAddShout("Any events going on today?", ShoutHarvest.ShoutChannel, when, "Rowan Hale"));
         Assert.False(session.TryAddShout(
-            "Bring your black eyeliner, broken hearts and emo anthems! Tonight is having Emo Night!",
+            "Bard night is on tonight.",
             ShoutHarvest.ShoutChannel,
             when.AddSeconds(5),
-            "Femboi JeesusGoblin"));
+            "Mina WillowGoblin"));
         Assert.True(session.TryAddShout(
-            "7 PM EST/ Crystal Zalera Goblet W7 P5/ glam contest",
+            "7 PM EST/ Crystal Zalera Goblet W3 P12/ a song contest",
             ShoutHarvest.ShoutChannel,
             when.AddSeconds(20),
-            "Femboi JeesusGoblin"));
+            "Mina WillowGoblin"));
 
         var entry = Assert.Single(session.Log.Entries);
         Assert.Equal(new TimeOnly(19, 0), entry.Time);
         Assert.Equal(new DateOnly(2026, 9, 27), entry.Date);
-        Assert.Equal(7, entry.Ward);
-        Assert.Contains("plot 5", entry.Place, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(3, entry.Ward);
+        Assert.Contains("plot 12", entry.Place, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Goblet", entry.Place, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Zalera", entry.Server, StringComparison.Ordinal);
-        Assert.Contains("Emo Night", entry.EventText, StringComparison.Ordinal);
+        Assert.Contains("Bard night", entry.EventText, StringComparison.Ordinal);
         Assert.DoesNotContain("Any events", entry.EventText, StringComparison.Ordinal);
         Assert.Equal("Zalera", SyncAnnouncement.FromLocal(entry, "Mateus").World);
 
@@ -318,7 +318,7 @@ public class HarvestTests
         {
             Server = "Diabolos",
             SpeakerWorld = "Diabolos",
-            EventText = "NOW @ Raff•Goblet•Ward 21•Plot 4 at 8pm",
+            EventText = "NOW @ Raff•Goblet•Ward 3•Plot 12 at 8pm",
         };
         Assert.Equal("Rafflesia", SyncAnnouncement.FromLocal(raff, "Diabolos").World);
         Assert.True(ServerNames.TryAdvertised("Diablos Goblet W1 P1", out var typo));
@@ -351,29 +351,29 @@ public class HarvestTests
     public void AZaleraInviteStaysVisibleOnTheHomeCalendar()
     {
         var worlds = new WorldCalendar("Diabolos");
-        var oryn = new CalendarEntry(
+        var row = new CalendarEntry(
             new DateOnly(2026, 9, 27),
             null,
             null,
-            17,
+            3,
             "Crystal, Zalera",
-            "ward 17, plot 60, The Goblet, Crystal, Zalera",
-            "Tonight Flying HIGH for EGGYs Birthday Goblet W17 P60",
-            "Oryn Ka'ge",
+            "ward 3, plot 12, The Goblet, Crystal, Zalera",
+            "Tonight bard night at Goblet W3 P12",
+            "Mina Willow",
             true,
-            "oryn",
+            "bard",
             DateTimeOffset.UtcNow,
             null,
             0,
             false,
             true);
-        Assert.True(worlds.ShowsLocal(oryn));
+        Assert.True(worlds.ShowsLocal(row));
         worlds.SetDataCenter("Crystal", true);
         Assert.True(worlds.Select("Zalera"));
-        Assert.True(worlds.ShowsLocal(oryn));
+        Assert.True(worlds.ShowsLocal(row));
         Assert.True(worlds.Select("Goblin"));
-        Assert.True(worlds.ShowsLocal(oryn));
-        var heard = oryn with { Manual = false, Channel = 11 };
+        Assert.True(worlds.ShowsLocal(row));
+        var heard = row with { Manual = false, Channel = 11 };
         Assert.False(worlds.ShowsLocal(heard));
         Assert.True(worlds.Select("Diabolos"));
         Assert.True(worlds.ShowsLocal(heard));
@@ -409,45 +409,45 @@ public class HarvestTests
     }
 
     [Fact]
-    public void ARepeatedEmoNightUpdatesTheAcceptedRow()
+    public void ARepeatedBardNightUpdatesTheAcceptedRow()
     {
         var session = new CalendarSession(new DateOnly(2026, 9, 27));
         session.Places = new PlaceCatalog(["The Goblet"]);
         var when = new DateTimeOffset(new DateTime(2026, 9, 27, 18, 0, 0));
         Assert.True(session.TryAddShout(
-            "Bring your black eyeliner and emo anthems! Tonight Emo Night Goblet W7 P5 7:00 PM",
+            "Bard night tonight at Goblet W3 P12 7:00 PM",
             ShoutHarvest.ShoutChannel,
             when,
-            "Femboi"));
+            "Mina"));
         var first = Assert.Single(session.Log.Entries);
         Assert.True(session.Log.Accept(first.Id));
         Assert.True(session.TryAddShout(
-            "Emo Night tonight. Bring black eyeliner and emo anthems. Goblet W7 P5 at 8:00 PM.",
+            "Bard night tonight at Goblet W3 P12 at 8:00 PM.",
             ShoutHarvest.ShoutChannel,
             when.AddMinutes(30),
-            "Someone"));
+            "Mina"));
         var updated = Assert.Single(session.Log.Entries);
         Assert.True(updated.Accepted);
         Assert.Equal(new TimeOnly(20, 0), updated.Time);
         Assert.Equal(first.Id, updated.Id);
         Assert.True(session.TryAddShout(
-            "Emo Night tonight. Bring black eyeliner and emo anthems. Goblet W9 P5 at 8:00 PM.",
+            "Bard night tonight at Goblet W9 P12 at 8:00 PM.",
             ShoutHarvest.ShoutChannel,
             when.AddMinutes(40),
-            "Someone"));
+            "Mina"));
         Assert.Equal(2, session.Log.Entries.Count);
     }
 
     [Fact]
-    public void OrynBirthdayLineIsKeptOnZalera()
+    public void AWardOnZaleraIsKept()
     {
         var places = new PlaceCatalog(["The Goblet"]);
         var when = new DateTimeOffset(new DateTime(2026, 9, 27, 18, 0, 0));
-        const string text = "Tonight: \uE000\uE005\uE002\uE075 \uE03C\uE07A\uE075\uE084 \u2665 Flying HIGH for EGGYs Birthday Edition! \u2665 Featuring Captains \u266A Raindrop, Yams, Aemilia, Keshi & Swage! \u266A \uE031 Wings Up @ \uE06F \uE015\uE06E ET Nyoooom! Dress code: Party Hats! \u2665 Join us for \uE06F Drinks, Music, Dancing, Tarot, Prizes \uE03E & Best Frens! - All that's missing is YOU! \u2605 \uE03C\uE07A\uE075\uE084 \uE008 Crystal, Zalera, Goblet, W17, P60 \u2665";
+        const string text = "Tonight: \uE031 bard night @ \uE06F \uE015\uE06E ET. Crystal, Zalera, Goblet, W3, P12";
         var entry = ShoutHarvest.TryHarvest(text, ShoutHarvest.ShoutChannel, when, places, aggressive: true);
         Assert.NotNull(entry);
-        Assert.Equal(17, entry.Ward);
-        Assert.Contains("plot 60", entry.Place, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(3, entry.Ward);
+        Assert.Contains("plot 12", entry.Place, StringComparison.OrdinalIgnoreCase);
         var shared = SyncAnnouncement.FromLocal(entry with { SpeakerWorld = "Goblin", Channel = ShoutHarvest.ShoutChannel }, "Diabolos");
         Assert.Equal("Zalera", shared.World);
     }
@@ -458,14 +458,14 @@ public class HarvestTests
         var places = new PlaceCatalog(["The Goblet"]);
         var when = new DateTimeOffset(new DateTime(2026, 9, 27, 18, 0, 0));
         var entry = ShoutHarvest.TryHarvest(
-            "Tonight: Flying HIGH for EGGYs Birthday. Wings Up at 8 PM ET. Crystal, Zalera, Goblet, W17, P60",
+            "Tonight: bard night at 8 PM ET. Crystal, Zalera, Goblet, W3, P12",
             ShoutHarvest.ShoutChannel,
             when,
             places,
             aggressive: true);
         Assert.NotNull(entry);
-        Assert.Equal(17, entry.Ward);
-        Assert.Contains("plot 60", entry.Place, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(3, entry.Ward);
+        Assert.Contains("plot 12", entry.Place, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Goblet", entry.Place, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Zalera", entry.Server, StringComparison.Ordinal);
     }
@@ -621,8 +621,8 @@ public class HarvestTests
     [Fact]
     public void BoxedTonightAndLavBedsStillMakeAnInvite()
     {
-        const string first = "\u25CE \uE082\uE075\uE086\uE075\uE082\uE072 \uE088 \uE075\uE082\uE071\uE083\uE075 \u25CE \uE07D\uE084\uE086 [21+ \uE07E\uE083\uE076\uE087] DJs Bella Doll & Snowing Sky";
-        const string second = "\u300B \uE084\uE07F\uE07E\uE079\uE077\uE078\uE084 @ \uE031 7 pm - 11 pm EST \u21D4 Dynamis - Cuchulainn - Lav Beds - Ward 20 - Plot 57 \u300A More Information discord.gg/exampleclub OR example.carrd.co/";
+        const string first = "Bards are playing tonight";
+        const string second = "\u300B \uE084\uE07F\uE07E\uE079\uE077\uE078\uE084 @ \uE031 7 pm - 11 pm EST \u21D4 Dynamis - Cuchulainn - Lav Beds - Ward 16 - Plot 6 \u300A More information discord.gg/exampleclub";
         var when = new DateTimeOffset(2026, 9, 28, 22, 0, 0, TimeSpan.Zero);
         var zone = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
         var alone = ShoutHarvest.TryHarvest(second, ShoutHarvest.ShoutChannel, when, aggressive: true, zone: zone);
@@ -631,10 +631,10 @@ public class HarvestTests
         Assert.NotNull(joined);
         Assert.Equal(new TimeOnly(19, 0), joined!.Time);
         Assert.Equal(new TimeOnly(23, 0), joined.End);
-        Assert.Equal(20, joined.Ward);
+        Assert.Equal(16, joined.Ward);
         Assert.Contains("Cuchulainn", joined.Server, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Lavender", joined.Place, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("plot 57", joined.Place, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("plot 6", joined.Place, StringComparison.OrdinalIgnoreCase);
         var hinted = ShoutHarvest.TryHarvest(second, ShoutHarvest.ShoutChannel, when, housingHint: "Mist", aggressive: true, zone: zone);
         Assert.NotNull(hinted);
         Assert.Contains("Lavender", hinted.Place, StringComparison.OrdinalIgnoreCase);
@@ -656,12 +656,12 @@ public class HarvestTests
     [Fact]
     public void BoxedLettersBecomeTheTitleAndASharedInviteCanBeSavedLocally()
     {
-        var moonlit = "\uE07D\uE07F\uE07F\uE07E\uE07C\uE079\uE084 \uE07B\uE079\uE083\uE083 is having Emo Night";
-        Assert.Equal("\uE07D\uE07F\uE07F\uE07E\uE07C\uE079\uE084 \uE07B\uE079\uE083\uE083", EventTitle.Choose(moonlit, "dance club"));
-        var jet = "\uE080\uE085\uE082\uE075 \uE03C\uE07A\uE075\uE084 Flying HIGH";
-        Assert.Equal("\uE080\uE085\uE082\uE075 \uE03C\uE07A\uE075\uE084", EventTitle.Choose(jet));
-        var ugly = "\uE07D\uE079\uE081\uE07F'\uE084\uE075 \uE085\uE077\uE07C\uE089 is pourin'";
-        Assert.Equal("\uE07D\uE079\uE081\uE07F'\uE084\uE075 \uE085\uE077\uE07C\uE089", EventTitle.Choose(ugly));
+        var titled = "\uE083\uE071\uE07D\uE080\uE07C\uE075 \uE07E\uE079\uE077\uE078\uE084 is the show";
+        Assert.Equal("\uE083\uE071\uE07D\uE080\uE07C\uE075 \uE07E\uE079\uE077\uE078\uE084", EventTitle.Choose(titled, "dance club"));
+        var jet = "\uE072\uE071\uE082\uE074 \uE07E\uE079\uE077\uE078\uE084 starts at 8";
+        Assert.Equal("\uE072\uE071\uE082\uE074 \uE07E\uE079\uE077\uE078\uE084", EventTitle.Choose(jet));
+        var ugly = "\uE072\uE071\uE082\uE074'\uE083 \uE073\uE071\uE07C\uE07C opens";
+        Assert.Equal("\uE072\uE071\uE082\uE074'\uE083 \uE073\uE071\uE07C\uE07C", EventTitle.Choose(ugly));
         Assert.Equal("bard show", EventTitle.Choose("open at 8pm ward 4", "bard show"));
         var beds = HousingTravel.Find(null, "Lavender Beds Ward 1 Plot51", null, null);
         Assert.NotNull(beds);
@@ -712,20 +712,20 @@ public class HarvestTests
         Assert.StartsWith("Shout Calendar: [Debug] Kept", debug, StringComparison.Ordinal);
         Assert.Contains("Empyreum", debug, StringComparison.Ordinal);
         Assert.Contains("Rafflesia", debug, StringComparison.Ordinal);
-        var lalaween = "△\uE07C\uE071\uE07C\uE071\uE087\uE075\uE075\uE07E□ returns on Oct 3 to help kick off the spoopy season! Join us for a fun night of interactive games. lalaween2026.carrd.co";
+        var partyLine = "\u25B3\uE07E\uE079\uE077\uE078\uE084\uE076\uE071\uE07C\uE07C\u25A1 returns on Oct 3. See the note for more information.";
         var heard = new DateTimeOffset(2026, 9, 28, 1, 30, 0, TimeSpan.Zero);
-        var party = ShoutHarvest.TryHarvest(lalaween, ShoutHarvest.ShoutChannel, heard, aggressive: true, zone: TimeZoneInfo.FindSystemTimeZoneById("America/New_York"));
+        var party = ShoutHarvest.TryHarvest(partyLine, ShoutHarvest.ShoutChannel, heard, aggressive: true, zone: TimeZoneInfo.FindSystemTimeZoneById("America/New_York"));
         Assert.NotNull(party);
         Assert.Equal(new DateOnly(2026, 10, 3), party.Date);
         Assert.Null(party.Time);
         var catalog = new PlaceCatalog(["Information Center", "The Goblet"]);
-        var withCatalog = ShoutHarvest.TryHarvest(lalaween, ShoutHarvest.ShoutChannel, heard, catalog, aggressive: true, zone: TimeZoneInfo.FindSystemTimeZoneById("America/New_York"));
+        var withCatalog = ShoutHarvest.TryHarvest(partyLine, ShoutHarvest.ShoutChannel, heard, catalog, aggressive: true, zone: TimeZoneInfo.FindSystemTimeZoneById("America/New_York"));
         Assert.NotNull(withCatalog);
         Assert.DoesNotContain("Information", withCatalog.Place ?? "", StringComparison.OrdinalIgnoreCase);
-        Assert.Equal("\uE07C\uE071\uE07C\uE071\uE087\uE075\uE075\uE07E", EventTitle.Choose(party.EventText));
-        Assert.Equal("lalaween", EventTitle.SearchKey(party.EventText).Split(' ', StringSplitOptions.RemoveEmptyEntries)[0]);
-        Assert.Contains("lalaween", EventTitle.SearchKey("Lalaween"), StringComparison.Ordinal);
-        Assert.Contains("lalaween", EventTitle.SearchKey("LALAWEEN"), StringComparison.Ordinal);
+        Assert.Equal("\uE07E\uE079\uE077\uE078\uE084\uE076\uE071\uE07C\uE07C", EventTitle.Choose(party.EventText));
+        Assert.Equal("nightfall", EventTitle.SearchKey(party.EventText).Split(' ', StringSplitOptions.RemoveEmptyEntries)[0]);
+        Assert.Contains("nightfall", EventTitle.SearchKey("Nightfall"), StringComparison.Ordinal);
+        Assert.Contains("nightfall", EventTitle.SearchKey("NIGHTFALL"), StringComparison.Ordinal);
         Assert.Equal("", EventTitle.Choose("open at 8pm ward 4"));
 
         var item = new SyncAnnouncement
@@ -1051,7 +1051,7 @@ public class HarvestTests
     public void AGobletNightWithAGluedClockRangeIsKept()
     {
         var entry = ShoutHarvest.TryHarvest(
-            "Mood Swing 8PM-12AM EST. Golem Goblet W21 P35.",
+            "Bard night 8PM-12AM EST. Golem Goblet W3 P12.",
             ShoutHarvest.ShoutChannel,
             new DateTimeOffset(2026, 9, 28, 22, 0, 0, TimeSpan.Zero),
             aggressive: true,
@@ -1060,8 +1060,8 @@ public class HarvestTests
         Assert.NotNull(entry);
         Assert.Equal(new TimeOnly(20, 0), entry!.Time);
         Assert.Equal(new TimeOnly(0, 0), entry.End);
-        Assert.Equal(21, entry.Ward);
-        Assert.Contains("plot 35", entry.Place, StringComparison.Ordinal);
+        Assert.Equal(3, entry.Ward);
+        Assert.Contains("plot 12", entry.Place, StringComparison.Ordinal);
         Assert.Contains("The Goblet", entry.Place, StringComparison.Ordinal);
         Assert.Contains("Golem", entry.Place, StringComparison.Ordinal);
     }
@@ -1071,17 +1071,17 @@ public class HarvestTests
     {
         var eastern = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
         var when = new DateTimeOffset(2026, 9, 28, 7, 0, 0, TimeSpan.Zero);
-        const string text = "THE DOG HAUS NOW @ Raff-Goblet-Ward 21-Plot 4 discord.gg/exampleclub";
+        const string text = "OPEN NOW @ Raff-Goblet-Ward 3-Plot 12 discord.gg/exampleclub";
         var entry = ShoutHarvest.TryHarvest(text, ShoutHarvest.ShoutChannel, when, aggressive: true, zone: eastern);
         Assert.NotNull(entry);
-        Assert.Equal(21, entry!.Ward);
-        Assert.Contains("plot 4", entry.Place, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(3, entry!.Ward);
+        Assert.Contains("plot 12", entry.Place, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("The Goblet", entry.Place, StringComparison.Ordinal);
         Assert.Contains("Rafflesia", entry.Server, StringComparison.Ordinal);
         var spot = HousingTravel.Find(entry.Place, entry.EventText, entry.Ward, entry.Server);
         Assert.Equal("The Goblet", spot!.Value.District);
-        Assert.Equal(21, spot.Value.Ward);
-        Assert.Equal(4, spot.Value.Plot);
+        Assert.Equal(3, spot.Value.Ward);
+        Assert.Equal(12, spot.Value.Plot);
         Assert.Equal("Rafflesia", spot.Value.World);
         Assert.Equal("Ul'dah - Steps of Nald", spot.Value.City);
     }
@@ -1091,22 +1091,22 @@ public class HarvestTests
     {
         var eastern = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
         var session = new CalendarSession(new DateOnly(2026, 9, 27)) { Zone = eastern };
-        const string kiss = "\uE07D\uE07F\uE07F\uE07E\uE07C\uE079\uE084 \uE07B\uE079\uE083\uE083";
-        var first = $"Bring your black eyeliner, broken hearts & emo anthems! Tonight {kiss} is having Emo Night!";
-        var second = "Time: Open now/ Crystal Zalera Goblet W7 P5/ \uE091\uE08F MIL + Giveaways | discord.gg/exampleclub";
+        const string title = "\uE083\uE071\uE07D\uE080\uE07C\uE075 \uE07E\uE079\uE077\uE078\uE084";
+        var first = $"Doors are open tonight. {title} is the show.";
+        var second = "Time: Open now/ Crystal Zalera Goblet W3 P12/ \uE091\uE08F guests | discord.gg/exampleclub";
         var when = new DateTimeOffset(2026, 9, 28, 2, 20, 18, TimeSpan.Zero);
         Assert.False(session.TryAddShout(first, ShoutHarvest.ShoutChannel, when, "Mina Willow Mina Willow"));
         Assert.True(session.TryAddShout(second, ShoutHarvest.ShoutChannel, when.AddSeconds(2), "Mina Willow"));
         var entry = Assert.Single(session.Log.Entries);
-        Assert.Equal(kiss, EventTitle.Choose(entry.EventText));
-        Assert.Contains(kiss, entry.EventText, StringComparison.Ordinal);
+        Assert.Equal(title, EventTitle.Choose(entry.EventText));
+        Assert.Contains(title, entry.EventText, StringComparison.Ordinal);
         Assert.Contains("\uE091\uE08F", entry.EventText, StringComparison.Ordinal);
         Assert.Equal(new TimeOnly(22, 20), entry.Time);
         Assert.Equal(new DateOnly(2026, 9, 27), entry.Date);
-        Assert.Equal(7, entry.Ward);
+        Assert.Equal(3, entry.Ward);
         Assert.Contains("Zalera", entry.Server, StringComparison.Ordinal);
         Assert.Contains("The Goblet", entry.Place, StringComparison.Ordinal);
-        Assert.Contains("plot 5", entry.Place, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("plot 12", entry.Place, StringComparison.OrdinalIgnoreCase);
         Assert.Equal("Mina Willow", entry.Sender);
     }
 

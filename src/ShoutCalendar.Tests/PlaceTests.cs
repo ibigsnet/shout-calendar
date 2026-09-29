@@ -104,7 +104,7 @@ public class PlaceTests
     [Fact]
     public void ShiroIsShiroganeAndCrystalIsNotTheTrainingGrounds()
     {
-        const string text = "Open now-5a EST @ Crystal, Mateus, Shiro, W18, P46";
+        const string text = "8pm-11pm EST at Crystal, Mateus, Shiro, W3, P12";
         var catalog = new PlaceCatalog(["Crystal Tower Training Grounds", "Limsa Lominsa"]);
         var eastern = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
         var entry = ShoutHarvest.TryHarvest(
@@ -117,8 +117,8 @@ public class PlaceTests
             zone: eastern);
 
         Assert.NotNull(entry);
-        Assert.Equal(18, entry.Ward);
-        Assert.Contains("plot 46", entry.Place, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(3, entry.Ward);
+        Assert.Contains("plot 12", entry.Place, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Shirogane", entry.Place, StringComparison.Ordinal);
         Assert.DoesNotContain("Mist", entry.Place, StringComparison.Ordinal);
         Assert.DoesNotContain("Limsa", entry.Place, StringComparison.Ordinal);
@@ -128,8 +128,8 @@ public class PlaceTests
 
         var spot = HousingTravel.Find(entry.Place, text, entry.Ward, entry.Server);
         Assert.Equal("Shirogane", spot!.Value.District);
-        Assert.Equal(18, spot.Value.Ward);
-        Assert.Equal(46, spot.Value.Plot);
+        Assert.Equal(3, spot.Value.Ward);
+        Assert.Equal(12, spot.Value.Plot);
         Assert.Equal("Kugane", spot.Value.City);
         Assert.Equal("Mateus", spot.Value.World);
 
@@ -144,13 +144,13 @@ public class PlaceTests
         var log = new CalendarLog();
         log.Add(new CalendarEntry(
             new DateOnly(2026, 9, 29),
-            new TimeOnly(0, 30),
-            new TimeOnly(5, 0),
-            18,
+            new TimeOnly(20, 0),
+            new TimeOnly(23, 0),
+            3,
             "Crystal, Mateus",
-            "ward 18, plot 46, Crystal Tower Training Grounds, Crystal, Mateus, Mist",
+            "ward 3, plot 12, Crystal Tower Training Grounds, Crystal, Mateus, Mist",
             text,
-            "Faerie Dust",
+            "Mina Willow",
             true,
             "solace",
             new DateTimeOffset(2026, 9, 29, 4, 30, 0, TimeSpan.Zero),

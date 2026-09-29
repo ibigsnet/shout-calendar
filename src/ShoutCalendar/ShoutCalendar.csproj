@@ -19,9 +19,7 @@ Add event keeps a pasted or typed invite on this computer. Save accepts a pendin
 
 The Resets tab adds Jumbo Cactpot, the weekly reset, and limited events such as A Nocturne for Heroes. Those three start on. Resets that share a clock share one line. Alarms play a chat sound from se.1 to se.16, or a WAV you choose, 15 minutes before an accepted event by default. Unaccepted invites are held for 1 day. Colors are yours to set. Today starts as a light wash.
 
-/shoutcalendar opens the calendar. /shoutcalendar test checks a line on your machine and does not send chat.
-
-Icon artwork was created with AI assistance using editable vector paths.</Description>
+/shoutcalendar opens the calendar. /shoutcalendar test checks a line on your machine and does not send chat.</Description>
     <Changelog>Local-only Pending hides Sync controls when Sync is absent. Last-success status includes elapsed seconds, minutes or hours; a 100 ms display buffer reduces flicker. Includes Appearance presets and expandable Colors, compact three-day view, improved recurring-event handling, and public-relay fallback.</Changelog>
   </PropertyGroup>
   <ItemGroup>

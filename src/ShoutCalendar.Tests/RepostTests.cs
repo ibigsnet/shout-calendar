@@ -9,9 +9,9 @@ public class RepostTests
         new DateOnly(2026, 9, 28),
         time,
         end,
-        18,
+        3,
         "Mateus",
-        "Mist ward 18 plot 46",
+        "The Goblet ward 3 plot 12",
         text,
         "Host",
         false,
@@ -27,13 +27,13 @@ public class RepostTests
         [
             Solace(
                 "now",
-                "♦ SOLACE ♦ open now-5a at Mateus W18 P46 with djs hope skip and homies tonight",
+                "open now-5a at Mateus W3 P12 with bards and cards tonight",
                 new TimeOnly(21, 6),
                 new TimeOnly(5, 0)),
         ]);
         log.Add(Solace(
             "later",
-            "♦ SOLACE ♦ open tonight 11p-5a at Mateus W18 P46 with djs hope skip and homies tonight",
+            "open tonight 11p-5a at Mateus W3 P12 with bards and cards tonight",
             new TimeOnly(23, 0),
             new TimeOnly(5, 0)));
 
@@ -41,7 +41,7 @@ public class RepostTests
         Assert.Equal("now", kept.Id);
         Assert.Equal(new TimeOnly(23, 0), kept.Time);
         Assert.Contains("11p-5a", kept.EventText, StringComparison.Ordinal);
-        Assert.Equal("Mist ward 18 plot 46", kept.Place);
+        Assert.Equal("The Goblet ward 3 plot 12", kept.Place);
     }
 
     [Fact]
@@ -52,20 +52,20 @@ public class RepostTests
             "Halicarnassus",
             "2026-09-27",
             "20:00",
-            "Looking for something smooth as sin tonight? THE VELVET LOTUS welcomes you 8p-12a est for companions cards cocktails and in-house music at the garden.");
+            "Cards and music tonight at THE NORTH HOUSE. Doors at 8p-12a est for drinks, songs, and a quiet garden.");
         var shorter = Announce(
             "short",
             "Halicarnassus",
             "2026-09-27",
             "20:00",
-            "Looking for something smooth as sin tonight? welcomes you 8p-12a est for companions cards cocktails and in-house music at the garden.");
+            "Cards and music tonight. Doors at 8p-12a est for drinks, songs, and a quiet garden.");
         var rows = new List<SyncAnnouncement>();
         SyncMerge.Apply(rows, named);
         SyncMerge.Apply(rows, shorter);
 
         var kept = Assert.Single(rows);
         Assert.Equal("named", kept.Id);
-        Assert.Contains("VELVET LOTUS", kept.Text, StringComparison.Ordinal);
+        Assert.Contains("NORTH HOUSE", kept.Text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -82,8 +82,8 @@ public class RepostTests
     [Fact]
     public void ADifferentPlotIsNotTheSameParty()
     {
-        var four = Announce("four", "Rafflesia", "2026-09-28", "00:49", "THE DOG HAUS presents services now at Ward 21 Plot 4 with djs bingo games and gamba drinks.");
-        var fortyOne = Announce("forty", "Rafflesia", "2026-09-28", "02:13", "THE DOG HAUS presents services now at Ward 21 Plot 41 with djs bingo games and gamba drinks.");
+        var four = Announce("four", "Rafflesia", "2026-09-28", "00:49", "Bard night now at Ward 3 Plot 12 with cards and music.");
+        var fortyOne = Announce("forty", "Rafflesia", "2026-09-28", "02:13", "Bard night now at Ward 3 Plot 41 with cards and music.");
 
         Assert.False(EventIdentity.SameRepost(four, fortyOne));
     }
@@ -91,7 +91,7 @@ public class RepostTests
     [Fact]
     public void TheSameWordingOnAnotherWorldStaysSeparate()
     {
-        const string text = "Don't miss the midnight service. Come for courts gamba and music every sunday from 8pm until midnight.";
+        const string text = "Bard night every sunday from 8pm until midnight.";
         var rows = new List<SyncAnnouncement>();
         SyncMerge.Apply(rows, Announce("zal", "Zalera", "2026-09-27", "20:00", text));
         SyncMerge.Apply(rows, Announce("dia", "Diabolos", "2026-09-27", "20:00", text));
@@ -104,7 +104,7 @@ public class RepostTests
     {
         var local = Solace(
             "local",
-            "♦ SOLACE ♦ open tonight 11p-5a at Mateus W18 P46 with djs hope skip and homies tonight",
+            "open tonight 11p-5a at Mateus W3 P12 with bards and cards tonight",
             new TimeOnly(23, 0),
             new TimeOnly(5, 0));
         var shared = Announce(
@@ -112,7 +112,7 @@ public class RepostTests
             "Mateus",
             "2026-09-28",
             "23:00",
-            "♦ SOLACE ♦ open tonight 11p-5a at Mateus W18 P46 with djs hope skip and homies tonight");
+            "open tonight 11p-5a at Mateus W3 P12 with bards and cards tonight");
 
         Assert.True(EventIdentity.SameRepost(local, shared));
     }
@@ -120,7 +120,7 @@ public class RepostTests
     [Fact]
     public void AFinishedNightIsPastAndARepeatIsNot()
     {
-        var done = Solace("done", "♦ SOLACE ♦ open tonight 11p-5a at Mateus W18 P46 with djs hope skip and homies tonight", new TimeOnly(23, 0), new TimeOnly(5, 0));
+        var done = Solace("done", "open tonight 11p-5a at Mateus W3 P12 with bards and cards tonight", new TimeOnly(23, 0), new TimeOnly(5, 0));
         var later = done with { Date = new DateOnly(2026, 10, 3), Id = "later" };
         var weekly = done with { Repeat = new EventRepeat(EventRepeat.Weekly, DayOfWeek.Monday, 0), Id = "weekly" };
         var morningAfter = new DateTime(2026, 9, 29, 12, 0, 0);
@@ -165,7 +165,7 @@ public class RepostTests
     [Fact]
     public void FoldingRepostsKeepsAPin()
     {
-        const string text = "♦ SOLACE ♦ open tonight 11p-5a at Mateus W18 P46 with djs hope skip and homies tonight";
+        const string text = "open tonight 11p-5a at Mateus W3 P12 with bards and cards tonight";
         var log = new CalendarLog();
         log.Restore(
         [
@@ -180,8 +180,8 @@ public class RepostTests
     [Fact]
     public void TwoPartiesOnTheSameNightStaySeparate()
     {
-        var ravish = Announce("rav", "Brynhildr", "2026-09-28", "21:00", "RAVISH three hours of techno and tentacles. Tears monday apart with bass and relentless rhythms.");
-        var asylum = Announce("asy", "Brynhildr", "2026-09-28", "20:00", "ASYLUM everyone is mad here. Open bar, a live dj, alluring company, and gamba all night.");
+        var ravish = Announce("rav", "Brynhildr", "2026-09-28", "21:00", "North hall for three hours of music. Monday bass and rhythms.");
+        var asylum = Announce("asy", "Brynhildr", "2026-09-28", "20:00", "South hall from 8. A live player and cards all night.");
 
         Assert.False(EventIdentity.SameRepost(ravish, asylum));
     }

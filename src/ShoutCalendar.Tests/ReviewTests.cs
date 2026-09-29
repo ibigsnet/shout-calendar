@@ -419,12 +419,12 @@ public class ReviewTests
     [Fact]
     public void ATwitchOrDiscordLinkPicksThatBrand()
     {
-        var twitch = EventKind.Find("Live at https://twitch.tv/tinybubbles tonight");
+        var twitch = EventKind.Find("Live at https://twitch.tv/examplecaster tonight");
         Assert.Equal("Twitch", twitch?.Name);
         Assert.InRange(twitch!.Value.Color.Z, 0.9f, 1f);
         Assert.True(twitch.Value.Color.X > twitch.Value.Color.Y);
 
-        var discord = EventKind.Find("join discord.gg/lalaween for the night");
+        var discord = EventKind.Find("join discord.gg/exampleclub for the night");
         Assert.Equal("Discord", discord?.Name);
         Assert.True(discord!.Value.Color.Z > discord.Value.Color.X);
         Assert.True(discord.Value.Color.Z > discord.Value.Color.Y);

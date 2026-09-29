@@ -1,7 +1,5 @@
 # Calendar appearance and sync guide
 
-Calendar 0.1.31 with Sync 0.2.7. These are local dev versions until published.
-
 ## Try these looks
 
 Open **Appearance** in the left panel. On a short display, use **Panels / settings** first.
@@ -92,8 +90,8 @@ Deleting one occurrence does not delete the whole recurring series. Shift-click 
 
 ## Diagnostics and relay availability
 
-Optional performance logging keeps bounded local samples and mirrors enabled samples to the Dalamud log. Samples contain counts, timing and byte totals rather than invitation bodies. Enabling this does not grant an assistant access or send logs to one. Copy the log when troubleshooting, or authorize inspection of your local files.
+Optional performance logging keeps bounded local samples and mirrors enabled samples to the Dalamud log. Samples contain counts, timing and byte totals rather than invitation bodies.
 
 **Backup relay** defaults to **Public relay**. When primary and backup identify the same endpoint, Sync uses only one. A custom primary automatically falls back to Public relay on an outage. Choose **Custom** for another compatible relay, or **Off** to keep a private group on its primary only. Existing custom backup addresses are preserved during migration. On an availability failure the client uses the configured backup and waits 60 seconds before probing the primary again. It does not switch to evade rate limits, authentication, upgrade requirements or invalid signed data. The selected backup receives eligible Shout/Yell contributions on failover; public fallback makes those invitations available on the public relay. The backup selector replaces the old Country mirror checkbox.
 
-This is relay redundancy, not player-to-player networking. A second endpoint is useful only if it is independently available and has replicated the relevant data. This update does not provision or deploy one. Saved invitations remain available during outages. Server deployment and sustained resource-limited staging are separate from this dev build.
+This is relay redundancy, not player-to-player networking. A second endpoint is useful only if it is independently available and has replicated the relevant data. Saved invitations remain available during outages.

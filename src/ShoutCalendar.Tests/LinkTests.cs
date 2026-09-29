@@ -7,11 +7,11 @@ public class LinkTests
     [Fact]
     public void DiscordAndWebAddressesBecomeLinks()
     {
-        var text = "7 PM EST/ Crystal Zalera Goblet W7 P5/ discord.gg/moonlitkissclub and https://example.com/night.";
+        var text = "7 PM EST at the Goblet W3 P12 discord.gg/exampleclub and https://example.com/night.";
         var links = LinkFinder.Find(text);
         Assert.Equal(2, links.Count);
-        Assert.Equal("https://discord.gg/moonlitkissclub", links[0].Url);
-        Assert.Equal("discord.gg/moonlitkissclub", links[0].Label);
+        Assert.Equal("https://discord.gg/exampleclub", links[0].Url);
+        Assert.Equal("discord.gg/exampleclub", links[0].Label);
         Assert.Equal("https://example.com/night", links[1].Url);
         Assert.False(LinkFinder.IsHttp("javascript:alert(1)"));
         Assert.Empty(LinkFinder.Find("no address here"));
@@ -22,14 +22,14 @@ public class LinkTests
         var full = LinkFinder.Find("https://www.twitch.tv/examplecaster and twitch.com/examplecaster");
         var once = Assert.Single(full);
         Assert.Contains("examplecaster", once.Url, StringComparison.OrdinalIgnoreCase);
-        var carrd = LinkFinder.Find("Lalaween 8pm Goblet W21 P35 lalaween2026.carrd.co");
+        var carrd = LinkFinder.Find("party notes at example.carrd.co");
         var page = Assert.Single(carrd);
-        Assert.Equal("https://lalaween2026.carrd.co", page.Url);
-        Assert.Equal("lalaween2026.carrd.co", page.Label);
+        Assert.Equal("https://example.carrd.co", page.Url);
+        Assert.Equal("example.carrd.co", page.Label);
         Assert.Empty(LinkFinder.Find("doors at 8.00 pm"));
-        var note = NoteLayout.Lines("Lalaween tonight 8pm / Goblet W21 P35 lalaween2026.carrd.co");
-        Assert.Contains("lalaween2026.carrd.co", note);
-        Assert.Contains("Goblet W21 P35", note);
+        var note = NoteLayout.Lines("8pm / Goblet W3 P12 example.carrd.co");
+        Assert.Contains("example.carrd.co", note);
+        Assert.Contains("Goblet W3 P12", note);
     }
 
     [Fact]

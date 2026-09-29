@@ -63,19 +63,19 @@ public class AlarmTests
         var veil = AcceptedAt(start) with
         {
             Server = "Famfrit",
-            Place = "The Lavender Beds ward 25 plot 36",
-            Ward = 25,
-            EventText = "\uE084\uE078\uE075 \uE086\uE075\uE079\uE07C tonight",
+            Place = "The Lavender Beds ward 1 plot 2",
+            Ward = 1,
+            EventText = "\uE072\uE071\uE082\uE074 \uE078\uE071\uE07C\uE07C tonight",
         };
         var hop = AlarmNotice.Line(veil, 15, "Diabolos");
-        Assert.Contains("THE VEIL", hop, StringComparison.Ordinal);
-        Assert.True(hop.IndexOf("THE VEIL", StringComparison.Ordinal) < hop.IndexOf("Server hop", StringComparison.Ordinal));
+        Assert.Contains("BARD HALL", hop, StringComparison.Ordinal);
+        Assert.True(hop.IndexOf("BARD HALL", StringComparison.Ordinal) < hop.IndexOf("Server hop", StringComparison.Ordinal));
         Assert.Contains("Server hop to Famfrit (Primal) first", hop, StringComparison.Ordinal);
         Assert.Contains("Visit Another Data Center", hop, StringComparison.Ordinal);
         Assert.Contains("Teleport: New Gridania aetheryte", hop, StringComparison.Ordinal);
         Assert.Equal(
-            "PURE BASSMENT",
-            EventTitle.Readable("\uE080\uE085\uE082\uE075 \uE072\uE071\uE083\uE083\uE07D\uE075\uE07E\uE084\uE03C \uE06F"));
+            "BARD HALL",
+            EventTitle.Readable("\uE072\uE071\uE082\uE074 \uE078\uE071\uE07C\uE07C\uE03C \uE06F"));
     }
 
     [Fact]
@@ -85,9 +85,9 @@ public class AlarmTests
         {
             Id = "veil",
             Server = "Famfrit",
-            Place = "The Lavender Beds ward 25 plot 36",
-            Ward = 25,
-            EventText = "\uE084\uE078\uE075 \uE086\uE075\uE079\uE07C tonight",
+            Place = "The Lavender Beds ward 1 plot 2",
+            Ward = 1,
+            EventText = "\uE072\uE071\uE082\uE074 \uE078\uE071\uE07C\uE07C tonight",
         };
         var copy = veil with { Id = "sync-copy" };
         var other = AcceptedAt(At) with
@@ -95,9 +95,9 @@ public class AlarmTests
             Id = "solace",
             Accepted = false,
             Server = "Mateus",
-            Place = "Mist ward 18 plot 46",
-            Ward = 18,
-            EventText = "\u2605 SOLACE \u2605 open tonight ward 18",
+            Place = "The Goblet ward 3 plot 12",
+            Ward = 3,
+            EventText = "\u2605 NORTH \u2605 open tonight ward 3",
         };
         var unique = AlarmNotice.Dedupe(
         [
@@ -109,8 +109,8 @@ public class AlarmTests
         Assert.Equal(2, unique.Count);
         var text = AlarmNotice.Broadcast(unique, "Diabolos");
         Assert.Equal(1, text.Split("Shout Calendar:").Length - 1);
-        Assert.Contains("THE VEIL", text, StringComparison.Ordinal);
-        Assert.Contains("SOLACE", text, StringComparison.Ordinal);
+        Assert.Contains("BARD HALL", text, StringComparison.Ordinal);
+        Assert.Contains("NORTH", text, StringComparison.Ordinal);
         Assert.DoesNotContain("open tonight", text, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Server hop", AlarmNotice.Broadcast([unique[0]], "Diabolos"), StringComparison.Ordinal);
     }

@@ -110,7 +110,7 @@ public static class EventTitle
 
     /// <summary>
     /// Search form. Boxed letters and fullwidth letters become ordinary lowercase,
-    /// so Lalaween and lalaween find the same title.
+    /// so Nightfall and nightfall find the same title.
     /// </summary>
     public static string SearchKey(string? text)
     {

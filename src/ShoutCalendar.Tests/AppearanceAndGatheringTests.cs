@@ -119,8 +119,9 @@ public sealed class AppearanceAndGatheringTests
     private static SyncAnnouncement Mass(string id, string world, string date, bool explicitWorld) => new()
     {
         Id = id, World = world, Date = date, Time = "20:00", Channel = 11, ShareFormat = 0,
-        Text = "Don't miss Midnight Mass at " + (explicitWorld ? $"Catholic Guilt! {world}'s premium night club! " : "")
-            + "Come unleash your desires and leave feeling cleansed. Every Sunday @ 8PM - 12AM EST! Allow our clergy to dote on you and indulge in your wildest fantasies. Courts, gamba, booze and drugs! Vices galore! We have both forms of wifi and DJs on deck!",
+        Text = "Bard night every Sunday @ 8PM - 12AM EST"
+            + (explicitWorld ? $" at North House on {world}." : ".")
+            + " Cards and music.",
     };
 
     [Fact]
@@ -137,7 +138,7 @@ public sealed class AppearanceAndGatheringTests
             Assert.True(restored.ApplyJson(book.ToJson()));
             var kept = Assert.Single(restored.Events);
             Assert.Equal("Zalera", kept.World);
-            Assert.Contains("Catholic Guilt", kept.Text);
+            Assert.Contains("North House", kept.Text);
             Assert.Contains(new DateOnly(2026, 9, 27), kept.ExcludedDates);
             Assert.Equal("2026-09-27", kept.Date);
         }

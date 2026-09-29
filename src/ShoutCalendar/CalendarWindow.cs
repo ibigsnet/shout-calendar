@@ -2810,7 +2810,7 @@ public sealed partial class CalendarWindow : Window
             if (ImGui.Checkbox("Performance log##sync-perf", ref debug))
                 book.DebugPerf = debug;
             ImGui.TextWrapped("Off by default. Each pass records catalog invites for your selected worlds, downloaded bytes, applied changes, and invites waiting for later passes. An unchanged cached catalog can download 0 bytes.");
-            ImGui.TextWrapped("Stored locally, including in the Dalamud log when enabled. These samples contain counts, timing and transfer sizes, not invitation text. Nothing is sent to an assistant. Zero downloaded bytes can mean an unchanged cached catalog.");
+            ImGui.TextWrapped("Stored locally, including in the Dalamud log when enabled. These samples contain counts, timing and transfer sizes, not invitation text. Zero downloaded bytes can mean an unchanged cached catalog.");
             var perf = book.CopyPerf();
             if (perf.Length > 0)
             {
