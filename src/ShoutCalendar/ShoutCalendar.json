@@ -7,5 +7,5 @@
   "Tags": [
     "utility"
   ],
-  "Changelog": "Pending is a short list. Click a row for the message and actions. Show all servers follows the open calendars and the servers turned on in Sync. Show hidden starts off. Alarms name the event in plain letters, then say when to change servers and which aetheryte to use. Click From to draft a tell. Game clock icons and bare web addresses are read. A missing clock can be set by hand. Lighter calendar and a small macro guide are optional. The relay shows Degraded when it is falling behind."
+  "Changelog": "Past events stay off the calendar until show past is on, with one switch for local and one for sync. Pin keeps an invite at the top of that day. Pinned invites stay in time order, and the other invites follow below them. Reposts of the same party on the same night become one invite. Alarms due in the same minute share one chat line. Download and upload are marked as speed caps."
 }

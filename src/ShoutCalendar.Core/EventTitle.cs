@@ -99,12 +99,39 @@ public static class EventTitle
         {
             if (ch is >= '\uE071' and <= '\uE08A')
                 chars[count++] = (char)('A' + (ch - '\uE071'));
-            else if (ch is '★' or '☆' or '△' or '□' or '【' or '】')
+            else if (ch is >= '\uE000' and <= '\uF8FF' || ch is '★' or '☆' or '△' or '□' or '【' or '】')
                 continue;
             else
                 chars[count++] = ch;
         }
 
         return new string(chars, 0, count).Trim();
+    }
+
+    /// <summary>
+    /// Search form. Boxed letters and fullwidth letters become ordinary lowercase,
+    /// so Lalaween and lalaween find the same title.
+    /// </summary>
+    public static string SearchKey(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return "";
+        var chars = new char[text.Length];
+        var count = 0;
+        foreach (var ch in text)
+        {
+            if (ch is >= '\uE071' and <= '\uE08A')
+                chars[count++] = (char)('a' + (ch - '\uE071'));
+            else if (ch is >= '\uFF21' and <= '\uFF3A')
+                chars[count++] = (char)('a' + (ch - '\uFF21'));
+            else if (ch is >= '\uFF41' and <= '\uFF5A')
+                chars[count++] = (char)('a' + (ch - '\uFF41'));
+            else if (ch is >= '\uE000' and <= '\uF8FF' || ch is '★' or '☆' or '△' or '□' or '【' or '】')
+                continue;
+            else
+                chars[count++] = char.ToLowerInvariant(ch);
+        }
+
+        return new string(chars, 0, count);
     }
 }

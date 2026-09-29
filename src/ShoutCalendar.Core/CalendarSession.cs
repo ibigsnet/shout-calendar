@@ -54,6 +54,12 @@ public sealed class CalendarSession
     /// <summary>When set, an event leaves this computer after its end time.</summary>
     public bool DropPastEvents { get; set; }
 
+    /// <summary>Past local invites stay off the calendar until this is on.</summary>
+    public bool ShowPastLocal { get; set; }
+
+    /// <summary>Past shared invites stay off the calendar until this is on.</summary>
+    public bool ShowPastSync { get; set; }
+
     /// <summary>Scale for text in the calendar window. 1 is the normal size.</summary>
     public float TextScale { get; set; } = 1f;
 
@@ -93,6 +99,13 @@ public sealed class CalendarSession
     /// <summary>When set, an alarm also rings on the minute the event starts.</summary>
     public bool AlarmAtStart { get; set; } = true;
 
+    public HashSet<string> PinnedSync { get; } = new(StringComparer.Ordinal);
+
+    public bool SyncPinned(string? id) => !string.IsNullOrEmpty(id) && this.PinnedSync.Contains(id);
+
+    public bool SetSyncPinned(string id, bool pinned) =>
+        pinned ? this.PinnedSync.Add(id) : this.PinnedSync.Remove(id);
+
     public bool ShowLocal { get; set; } = true;
 
     public bool ShowLocalAccepted { get; set; } = true;
@@ -123,8 +136,14 @@ public sealed class CalendarSession
 
     public bool ShowResets { get; set; } = true;
 
-    /// <summary>Draws the month with fewer windows. For machines where the calendar drops frames.</summary>
-    public bool LightCalendar { get; set; }
+    /// <summary>Draws the month with fewer windows. On unless the user turns it off.</summary>
+    public bool LightCalendar { get; set; } = true;
+
+    /// <summary>Prints a chat line when a shout is kept. Off unless the user turns it on.</summary>
+    public bool ParseDebug { get; set; }
+
+    /// <summary>Null until the user picks Week or Month.</summary>
+    public bool? WeekView { get; set; }
 
     public Vector4 SyncPendingColor { get; set; } = new(0.63f, 0.28f, 0.72f, 0.95f);
 
@@ -237,7 +256,10 @@ public sealed class CalendarSession
         this.Month = day.Month;
     }
 
-    public bool TryAddShout(string? text, int channel, DateTimeOffset shoutTimestamp, string? sender = null, string? speakerWorld = null)
+    public bool TryAddShout(string? text, int channel, DateTimeOffset shoutTimestamp, string? sender = null, string? speakerWorld = null) =>
+        this.KeepShout(text, channel, shoutTimestamp, sender, speakerWorld) is not null;
+
+    public CalendarEntry? KeepShout(string? text, int channel, DateTimeOffset shoutTimestamp, string? sender = null, string? speakerWorld = null)
     {
         var combined = this.burst.Push(sender, channel, shoutTimestamp, text, out var replaceId);
         var detected = ShoutHarvest.TryHarvest(
@@ -250,24 +272,27 @@ public sealed class CalendarSession
             this.AggressiveFilter,
             this.Zone);
         if (detected is null)
-            return false;
+            return null;
+        var spoken = speakerWorld?.Trim() ?? "";
+        var venue = ShareWorld.Choose(this.CurrentWorld, spoken, detected.Server, combined);
         detected = detected with
         {
             Sender = SenderName.Clean(sender),
-            SpeakerWorld = speakerWorld?.Trim() ?? "",
+            SpeakerWorld = spoken,
+            Server = string.IsNullOrWhiteSpace(detected.Server) && venue.Length > 0 ? venue : detected.Server,
         };
         if (replaceId is not null && this.Log.Rewrite(replaceId, detected))
         {
             this.burst.Remember(replaceId);
-            return true;
+            return detected;
         }
 
         if (!this.Log.Add(detected))
-            return false;
+            return null;
         var id = this.Log.Entries[^1].Id;
         this.burst.Remember(id);
         if (this.Informedaholic)
             this.Log.Accept(id);
-        return true;
+        return detected;
     }
 }

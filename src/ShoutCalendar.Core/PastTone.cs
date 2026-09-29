@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace ShoutCalendar.Core;
 
-/// <summary>A passed accepted event keeps its color, with the hue pulled toward grey.</summary>
+/// <summary>A passed event keeps its color, with the hue pulled toward grey.</summary>
 public static class PastTone
 {
     public static bool Ended(DateOnly? day, TimeOnly? start, TimeOnly? end, DateTime now)

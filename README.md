@@ -33,7 +33,7 @@ With the aggressive filter on, a message is kept when two of a date, a time, and
 
 Pending invites are orange. Accepted invites are green and leave the left list. Decline and Delete remove an invite. Edit and Delete still work after you accept. Clear local, Clear local accepted, and Clear local unaccepted ask Yes or No first and leave shared invites alone. The Sync tab has Clear sync accepted and Clear sync unaccepted. Those remove shared invites on this computer from every server calendar that is open, and the question names those servers. The relay keeps them for other people. Delete on a shared invite does the same for that one row, and that row does not come back.
 
-Accepted and pending invites are saved across restarts. **Hold unaccepted for (days)** defaults to 1. Accepted invites stay until you delete them.
+Accepted and pending invites are saved across restarts. **Hold unaccepted for (days)** defaults to 1. Accepted invites stay until you delete them. Past events stay off the calendar until **Show past local events** or **Show past sync events** is on. **Delete past events** still removes them from this computer.
 
 **Aggressive filter** is on by default. A new line is kept only when two of a date, a time, and a place are present. Now, right now, and a line that ends with right count as the current time. Lines from the same player on shout or yell, close together, are read as one invite. A shout that names a world is filed on that world. A data center name, such as Crystal, is not a world.
 

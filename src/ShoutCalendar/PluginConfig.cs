@@ -11,6 +11,9 @@ public sealed class PluginConfig : IPluginConfiguration
 
     public List<StoredEvent> Events { get; set; } = new();
 
+    /// <summary>Shared invite ids pinned on this computer. Not sent to the relay.</summary>
+    public List<string> PinnedSync { get; set; } = new();
+
     /// <summary>Log lines already copied into <see cref="Events"/>. Not a duplicate policy for live shouts.</summary>
     public List<string> ImportedLogLines { get; set; } = new();
 
@@ -40,6 +43,12 @@ public sealed class PluginConfig : IPluginConfiguration
 
     /// <summary>When set, events leave this computer after their end time.</summary>
     public bool DropPastEvents { get; set; }
+
+    /// <summary>Past local invites stay off the calendar until this is on.</summary>
+    public bool ShowPastLocal { get; set; }
+
+    /// <summary>Past shared invites stay off the calendar until this is on.</summary>
+    public bool ShowPastSync { get; set; }
 
     /// <summary>Scale for text in the calendar window. 1 is the normal size.</summary>
     public float TextScale { get; set; } = 1f;
@@ -103,6 +112,13 @@ public sealed class PluginConfig : IPluginConfiguration
 
     public bool LightCalendar { get; set; }
 
+    /// <summary>Unset means the faster calendar stays on.</summary>
+    public bool? FastCalendar { get; set; }
+
+    public bool ParseDebug { get; set; }
+
+    public bool? WeekView { get; set; }
+
     public Vector4 SyncPendingColor { get; set; } = new(0.63f, 0.28f, 0.72f, 0.95f);
 
     public Vector4 SharedBarColor { get; set; } = new(0.95f, 0.05f, 0.05f, 1f);
@@ -165,6 +181,8 @@ public sealed class StoredEvent
 
     public bool Hidden { get; set; }
 
+    public bool Pinned { get; set; }
+
     public string SpeakerWorld { get; set; } = "";
 
     public float? ColorR { get; set; }
@@ -197,6 +215,7 @@ public sealed class StoredEvent
             NoteUpdated = entry.NoteUpdated,
             Manual = entry.Manual,
             Hidden = entry.Hidden,
+            Pinned = entry.Pinned,
             SpeakerWorld = entry.SpeakerWorld,
             ColorR = entry.Color?.X,
             ColorG = entry.Color?.Y,
@@ -252,7 +271,8 @@ public sealed class StoredEvent
             stored.ColorA is null
                 ? null
                 : new Vector4(stored.ColorR ?? 0f, stored.ColorG ?? 0f, stored.ColorB ?? 0f, stored.ColorA.Value),
-            stored.Hidden);
+            stored.Hidden,
+            stored.Pinned);
         return true;
     }
 }

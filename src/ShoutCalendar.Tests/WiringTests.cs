@@ -21,6 +21,10 @@ public class WiringTests
         Assert.Contains("InputTextWithHint(\"##event-search\", \"Search\"", window, StringComparison.Ordinal);
         Assert.Contains("Delete past local", window, StringComparison.Ordinal);
         Assert.Contains("Delete past sync", window, StringComparison.Ordinal);
+        Assert.Contains("Show past local events##show-past-local", window, StringComparison.Ordinal);
+        Assert.Contains("Show past sync events##show-past-sync", window, StringComparison.Ordinal);
+        Assert.Contains("Show past local events##show-past-local", window, StringComparison.Ordinal);
+        Assert.Contains("Show past sync events##show-past-sync", window, StringComparison.Ordinal);
         Assert.Contains("Delete past events##drop-past", window, StringComparison.Ordinal);
         Assert.Contains("this.editingId = null;", window, StringComparison.Ordinal);
         Assert.Contains("OngoingCheck.IsOngoing", window, StringComparison.Ordinal);
@@ -38,7 +42,8 @@ public class WiringTests
         Assert.Contains("Alarm unaccepted events", window, StringComparison.Ordinal);
         Assert.Contains("BeginTabItem(\"Resets\")", window, StringComparison.Ordinal);
         Assert.Contains("BeginTabItem(\"Settings\")", window, StringComparison.Ordinal);
-        Assert.Contains("Lighter calendar", window, StringComparison.Ordinal);
+        Assert.Contains("Faster calendar", window, StringComparison.Ordinal);
+        Assert.Contains("Parse debug##parse-debug", window, StringComparison.Ordinal);
         Assert.Contains("Performance log##sync-perf", window, StringComparison.Ordinal);
         Assert.Contains("Off by default.", window, StringComparison.Ordinal);
         Assert.Contains("BeginTabItem(\"Colors\")", window, StringComparison.Ordinal);
@@ -71,7 +76,8 @@ public class WiringTests
         Assert.Contains("SetScrollHereY(0.5f)", window, StringComparison.Ordinal);
         Assert.Contains("BeginCombo(\"##year\"", window, StringComparison.Ordinal);
         Assert.Contains("BeginCombo(\"##month\"", window, StringComparison.Ordinal);
-        Assert.Contains("Update Shout Calendar Sync to use this relay.", window, StringComparison.Ordinal);
+        Assert.Contains("Sync: Out of date. Update Shout Calendar and Shout Calendar Sync.", window, StringComparison.Ordinal);
+        Assert.Contains("Update Shout Calendar and Shout Calendar Sync so shared invites stay current.", window, StringComparison.Ordinal);
         Assert.Contains("BeginTabItem(\"Sync\")", window, StringComparison.Ordinal);
         Assert.Contains("DismissOpen", window, StringComparison.Ordinal);
         Assert.Contains("You currently have the calendars for the following servers open:", File.ReadAllText(Path.Combine(root, "src", "ShoutCalendar.Core", "ClearPrompt.cs")), StringComparison.Ordinal);
@@ -88,8 +94,8 @@ public class WiringTests
         Assert.Contains("new Vector2(-1f, 0f)", window, StringComparison.Ordinal);
         Assert.DoesNotContain("TextWrapped(this.pendingLink", window, StringComparison.Ordinal);
         Assert.Contains("Informedaholic: accept every shared invite", window, StringComparison.Ordinal);
-        Assert.Contains("Download (Mb/s)", window, StringComparison.Ordinal);
-        Assert.Contains("Upload (Mb/s)", window, StringComparison.Ordinal);
+        Assert.Contains("Download (Mb/s) (Speed cap)", window, StringComparison.Ordinal);
+        Assert.Contains("Upload (Mb/s) (Speed cap)", window, StringComparison.Ordinal);
         Assert.Contains("upload starts at 1 Mb/s", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Speed (Mb/s)", window, StringComparison.Ordinal);
         Assert.Contains("Country mirror", window, StringComparison.Ordinal);

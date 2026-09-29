@@ -32,6 +32,12 @@ public sealed class SyncAnnouncement
 
     public string ContentKey { get; set; } = "";
 
+    /// <summary>Parse generation. A missing wire value stays at <see cref="ShareFormat.Legacy"/>.</summary>
+    public int ShareFormat { get; set; } = global::ShoutCalendar.Core.ShareFormat.Current;
+
+    /// <summary>Plugin version that parsed the shout.</summary>
+    public string PluginVersion { get; set; } = "";
+
     public bool Declined { get; set; }
 
     /// <summary>Parked locally. Not a decline and not a tombstone.</summary>
@@ -43,7 +49,7 @@ public sealed class SyncAnnouncement
 
     public int PayloadBytes => RelayCodec.Encode(this).Length;
 
-    public static SyncAnnouncement FromLocal(CalendarEntry entry, string homeWorld)
+    public static SyncAnnouncement FromLocal(CalendarEntry entry, string homeWorld, string? pluginVersion = null)
     {
         var world = ShareWorld.Choose(homeWorld, entry.SpeakerWorld, entry.Server, entry.EventText);
 
@@ -59,6 +65,8 @@ public sealed class SyncAnnouncement
             Date = entry.Date?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "",
             Time = entry.Time?.ToString("HH:mm", CultureInfo.InvariantCulture) ?? "",
             Revision = entry.NoteUpdated ? 2 : 1,
+            ShareFormat = global::ShoutCalendar.Core.ShareFormat.Current,
+            PluginVersion = (pluginVersion ?? "").Trim(),
         };
     }
 }
@@ -184,6 +192,10 @@ public static class RelayCodec
 
         public string ContentKey { get; set; } = "";
 
+        public int ShareFormat { get; set; }
+
+        public string PluginVersion { get; set; } = "";
+
         public static Wire From(SyncAnnouncement item) => new()
         {
             Id = item.Id,
@@ -199,6 +211,8 @@ public static class RelayCodec
             Time = item.Time,
             Revision = item.Revision,
             ContentKey = item.ContentKey,
+            ShareFormat = item.ShareFormat,
+            PluginVersion = item.PluginVersion,
         };
 
         public SyncAnnouncement ToAnnouncement() => new()
@@ -216,6 +230,8 @@ public static class RelayCodec
             Time = this.Time,
             Revision = this.Revision,
             ContentKey = this.ContentKey,
+            ShareFormat = this.ShareFormat,
+            PluginVersion = this.PluginVersion,
         };
     }
 }

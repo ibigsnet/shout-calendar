@@ -39,6 +39,60 @@ public static class DataCenters
         return false;
     }
 
+    public static string SharedOn(IEnumerable<string> viewing)
+    {
+        var open = new HashSet<string>(viewing.Where(name => !string.IsNullOrWhiteSpace(name)), StringComparer.OrdinalIgnoreCase);
+        var all = new List<string>();
+        var most = new List<string>();
+        var except = new List<string>();
+        var listed = new List<string>();
+        var grouped = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var group in All)
+        {
+            var selected = group.Worlds.Where(open.Contains).ToList();
+            if (selected.Count == 0)
+                continue;
+            foreach (var name in selected)
+                grouped.Add(name);
+            var missing = group.Worlds.Where(name => !open.Contains(name)).ToList();
+            if (missing.Count == 0)
+                all.Add(group.Name);
+            else if (missing.Count <= 2 && selected.Count >= group.Worlds.Count - 2)
+                except.Add(missing.Count == 1
+                    ? $"all of {group.Name} except {missing[0]}"
+                    : $"all of {group.Name} except {Join(missing)}");
+            else if (selected.Count * 2 > group.Worlds.Count)
+                most.Add(group.Name);
+            else
+                listed.AddRange(selected);
+        }
+
+        foreach (var name in open)
+        {
+            if (!grouped.Contains(name))
+                listed.Add(name);
+        }
+
+        var parts = new List<string>();
+        if (all.Count > 0)
+            parts.Add("all of " + Join(all));
+        if (most.Count > 0)
+            parts.Add("most of " + Join(most));
+        parts.AddRange(except);
+        if (listed.Count > 0)
+            parts.Add(Join(listed));
+        return parts.Count == 0 ? "Shared on no worlds" : "Shared on " + Join(parts);
+    }
+
+    private static string Join(IReadOnlyList<string> names)
+    {
+        if (names.Count <= 1)
+            return names.Count == 0 ? "" : names[0];
+        if (names.Count == 2)
+            return names[0] + " and " + names[1];
+        return string.Join(", ", names.Take(names.Count - 1)) + ", and " + names[^1];
+    }
+
     public static bool SameCenter(string? left, string? right) =>
         TryGroup(left, out var first) && TryGroup(right, out var second) && first.Equals(second, StringComparison.OrdinalIgnoreCase);
 

@@ -330,7 +330,8 @@ public sealed class SyncBook
         var text = $"{entry.EventText} {entry.Place}";
         foreach (var item in this.Events)
         {
-            if (!EventIdentity.SameShout(item.World, item.Text, world, text))
+            if (!EventIdentity.SameRepost(entry, item)
+                && !EventIdentity.SameShout(item.World, item.Text, world, text))
                 continue;
             item.Declined = false;
             item.Accepted = true;
@@ -439,6 +440,7 @@ public sealed class SyncBook
         var shareable = SyncFill.Prioritize(
             incoming
                 .Where(item => !item.Id.StartsWith("gone:", StringComparison.Ordinal))
+                .Where(item => ShareFormat.Accepts(item.ShareFormat))
                 .Where(item => SharePolicy.ShouldReceive(item.Channel, this.Settings))
                 .Where(item => PlayableWorlds.TryCanonical(item.World, out _))
                 .Where(item => ShoutHarvest.IsSharedEvent(item.Text, item.Channel, DateTimeOffset.UtcNow, places))
@@ -472,12 +474,36 @@ public sealed class SyncBook
             added++;
         }
 
+        this.FoldRepostsUnlocked();
+
         if (this.Informedaholic)
             this.AcceptAllRemoteUnlocked();
         if (SyncFill.StatusTip(this.LastFill.Value) is string tip)
             this.SyncStatus = tip;
         return added;
         }
+    }
+
+    private int FoldRepostsUnlocked()
+    {
+        var removed = 0;
+        for (var i = 0; i < this.Events.Count; i++)
+        {
+            for (var j = i + 1; j < this.Events.Count;)
+            {
+                if (!EventIdentity.SameRepost(this.Events[i], this.Events[j]))
+                {
+                    j++;
+                    continue;
+                }
+
+                SyncMerge.Combine(this.Events[i], this.Events[j]);
+                this.Events.RemoveAt(j);
+                removed++;
+            }
+        }
+
+        return removed;
     }
 
     private bool AlreadyHeld(SyncAnnouncement item)
@@ -596,6 +622,7 @@ public sealed class SyncBook
 
         if (!string.IsNullOrWhiteSpace(snapshot.BookId))
             this.BookId = snapshot.BookId;
+        this.FoldRepostsUnlocked();
         }
 
         this.SettingsStored = true;

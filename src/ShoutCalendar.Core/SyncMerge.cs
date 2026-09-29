@@ -46,6 +46,7 @@ public static class SyncMerge
         incoming.Revision = Math.Max(current.Revision + 1, incoming.Revision);
         if (!string.IsNullOrEmpty(current.Id))
             incoming.Id = current.Id;
+        PreferBody(current, incoming);
         incoming.Accepted = current.Accepted || incoming.Accepted;
         incoming.Declined = current.Declined;
         incoming.Hidden = current.Hidden;
@@ -56,6 +57,52 @@ public static class SyncMerge
         return SyncMergeResult.Updated;
     }
 
+    /// <summary>Keep an explicit clock and the fuller shout when a repost is merged.</summary>
+    public static void Combine(SyncAnnouncement kept, SyncAnnouncement extra)
+    {
+        PreferBody(kept, extra);
+        kept.Text = extra.Text ?? kept.Text;
+        if (!string.IsNullOrEmpty(extra.Date))
+            kept.Date = extra.Date;
+        if (!string.IsNullOrEmpty(extra.Time))
+            kept.Time = extra.Time;
+        if (string.IsNullOrEmpty(kept.World))
+            kept.World = extra.World;
+        kept.Accepted = kept.Accepted || extra.Accepted;
+        kept.Declined = kept.Declined || extra.Declined;
+        kept.Hidden = kept.Hidden && extra.Hidden;
+        if (kept.Declined)
+            kept.Accepted = false;
+        if (extra.Revision > kept.Revision)
+            kept.Revision = extra.Revision;
+        kept.ContentKey = Key(kept);
+    }
+
+    private static void PreferBody(SyncAnnouncement current, SyncAnnouncement incoming)
+    {
+        var currentNow = ZoneClock.TryNowUntil(current.Text, out _);
+        var incomingNow = ZoneClock.TryNowUntil(incoming.Text, out _);
+        if (incomingNow && !currentNow)
+        {
+            incoming.Text = current.Text ?? "";
+            if (!string.IsNullOrEmpty(current.Time))
+                incoming.Time = current.Time;
+            if (!string.IsNullOrEmpty(current.Date))
+                incoming.Date = current.Date;
+        }
+        else if ((current.Text?.Length ?? 0) > (incoming.Text?.Length ?? 0) && !currentNow)
+        {
+            incoming.Text = current.Text ?? "";
+        }
+
+        if (string.IsNullOrEmpty(incoming.Time))
+            incoming.Time = current.Time;
+        if (string.IsNullOrEmpty(incoming.Date))
+            incoming.Date = current.Date;
+        if (string.IsNullOrEmpty(incoming.World))
+            incoming.World = current.World;
+    }
+
     private static bool Same(SyncAnnouncement row, SyncAnnouncement incoming)
     {
         if (!string.IsNullOrEmpty(incoming.Id) && row.Id == incoming.Id
@@ -63,7 +110,9 @@ public static class SyncMerge
             return true;
         if (!string.IsNullOrEmpty(row.ContentKey) && row.ContentKey == incoming.ContentKey)
             return true;
-        return EventIdentity.SameShout(row.World, row.Text, incoming.World, incoming.Text);
+        if (EventIdentity.SameShout(row.World, row.Text, incoming.World, incoming.Text))
+            return true;
+        return EventIdentity.SameRepost(row, incoming);
     }
 }
 
@@ -180,6 +229,7 @@ public static class RelayReach
         using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(4) };
         var request = new HttpRequestMessage(HttpMethod.Post, url);
         request.Headers.TryAddWithoutValidation("X-Sync-Protocol", RelayProtocol.Version.ToString(CultureInfo.InvariantCulture));
+        request.Headers.TryAddWithoutValidation("X-Sync-Share-Format", ShareFormat.Current.ToString(CultureInfo.InvariantCulture));
         request.Headers.TryAddWithoutValidation("X-Sync-Signature", Convert.ToBase64String(new byte[64]));
         request.Content = new ByteArrayContent(Encoding.UTF8.GetBytes("1"));
         using var response = client.Send(request);

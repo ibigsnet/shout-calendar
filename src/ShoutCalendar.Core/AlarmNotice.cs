@@ -2,28 +2,20 @@ using System.Globalization;
 
 namespace ShoutCalendar.Core;
 
-/// <summary>The chat line printed when an alarm rings.</summary>
+/// <summary>The chat line printed when an alarm rings. Several invites due on the same minute share one line.</summary>
 public static class AlarmNotice
 {
+    public readonly record struct Ring(CalendarEntry Entry, int MinutesBefore, bool Accepted);
+
     public static string Line(CalendarEntry entry, int minutesBefore, string? here = null)
     {
-        var title = EventTitle.Readable(EventTitle.Choose(entry.EventText));
-        var name = title.Length > 0 ? title : "An event";
-        var when = entry.Time?.ToString("HH:mm", CultureInfo.InvariantCulture) ?? "";
-        var lead = minutesBefore > 0
-            ? $"{name} starts in {minutesBefore} minutes"
-            : $"{name} is starting";
-        if (when.Length > 0)
-            lead += " at " + when;
-        if (entry.Date is DateOnly day)
-            lead += " on " + day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-
-        var spot = HousingTravel.Find(entry.Place, entry.EventText, entry.Ward, entry.Server);
+        var lead = Lead(entry, minutesBefore);
+        var spot = HousingTravel.FindVenue(entry.Place, entry.EventText, entry.Ward, entry.Server, entry.SpeakerWorld);
         var needed = spot?.World ?? "";
-        if (needed.Length == 0 && PlayableWorlds.TryNamedWorld(entry.Server, out var named))
+        if (needed.Length == 0 && PlayableWorlds.TryNamedWorld(entry.SpeakerWorld, out var named))
             needed = named;
 
-        var parts = new List<string> { "Shout Calendar:" };
+        var parts = new List<string> { "Shout Calendar:", lead + "." };
         if (PlayableWorlds.TryCanonical(here, out var standing)
             && needed.Length > 0
             && !needed.Equals(standing, StringComparison.OrdinalIgnoreCase))
@@ -36,8 +28,94 @@ public static class AlarmNotice
             parts.Add($"Teleport: {housing.City} aetheryte.{ward}");
         }
 
-        parts.Add(lead + ".");
         return string.Join(" ", parts);
+    }
+
+    /// <summary>Same title, clock, and world is one invite, even when chat and sync both stored it.</summary>
+    public static IReadOnlyList<Ring> Dedupe(IEnumerable<Ring> rings)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var kept = new List<Ring>();
+        foreach (var ring in rings)
+        {
+            if (string.IsNullOrEmpty(ring.Entry.Id) || !seen.Add(Identity(ring.Entry)))
+                continue;
+            kept.Add(ring);
+        }
+
+        return kept;
+    }
+
+    /// <summary>One chat message. A single invite keeps the travel note. Several invites are named once each.</summary>
+    public static string Broadcast(IReadOnlyList<Ring> rings, string? here = null)
+    {
+        if (rings.Count == 0)
+            return "";
+        if (rings.Count == 1)
+            return Line(rings[0].Entry, rings[0].MinutesBefore, here);
+
+        var parts = new List<string> { "Shout Calendar:" };
+        foreach (var ring in rings)
+            parts.Add(Brief(ring.Entry, ring.MinutesBefore) + ".");
+        return string.Join(" ", parts);
+    }
+
+    private static string Lead(CalendarEntry entry, int minutesBefore)
+    {
+        var title = EventTitle.Readable(EventTitle.Choose(entry.EventText));
+        var name = title.Length > 0 ? title : "An event";
+        var when = entry.Time?.ToString("HH:mm", CultureInfo.InvariantCulture) ?? "";
+        var lead = minutesBefore > 0
+            ? $"{name} starts in {minutesBefore} minutes"
+            : $"{name} is starting";
+        if (when.Length > 0)
+            lead += " at " + when;
+        if (entry.Date is DateOnly day)
+            lead += " on " + day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        return lead;
+    }
+
+    private static string Brief(CalendarEntry entry, int minutesBefore)
+    {
+        var lead = Lead(entry, minutesBefore);
+        var where = Where(entry);
+        return where.Length == 0 ? lead : lead + ", " + where;
+    }
+
+    private static string Where(CalendarEntry entry)
+    {
+        var spot = HousingTravel.FindVenue(entry.Place, entry.EventText, entry.Ward, entry.Server, entry.SpeakerWorld);
+        var world = spot?.World ?? "";
+        if (world.Length == 0)
+            world = WorldOf(entry);
+        if (spot is not HousingSpot housing || housing.Ward is not int number || housing.District.Length == 0)
+            return world;
+        var place = housing.District + " ward " + number.ToString(CultureInfo.InvariantCulture);
+        return world.Length == 0 ? place : world + ", " + place;
+    }
+
+    private static string Identity(CalendarEntry entry)
+    {
+        var title = EventTitle.Readable(EventTitle.Choose(entry.EventText));
+        if (title.Length == 0)
+            title = entry.Id;
+        var time = entry.Time?.ToString("HH:mm", CultureInfo.InvariantCulture) ?? "";
+        var date = entry.Date?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "";
+        return string.Join('|', title, date, time, WorldOf(entry));
+    }
+
+    private static string WorldOf(CalendarEntry entry)
+    {
+        if (!string.IsNullOrWhiteSpace(entry.Server))
+        {
+            foreach (var part in entry.Server.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (PlayableWorlds.TryNamedWorld(part, out var named))
+                    return named;
+            }
+        }
+
+        return PlayableWorlds.TryNamedWorld(entry.SpeakerWorld, out var speaker) ? speaker : "";
     }
 
     private static string Hop(string needed, string current)

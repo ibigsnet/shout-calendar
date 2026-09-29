@@ -55,6 +55,8 @@ public sealed class PlaceCatalog
             if (space < 5)
                 continue;
             var head = name[..space];
+            if (OrdinaryWord(head))
+                continue;
             if (found.Any(hit => hit.StartsWith(head, StringComparison.OrdinalIgnoreCase)))
                 continue;
             if (!ContainsWord(text, head))
@@ -74,6 +76,12 @@ public sealed class PlaceCatalog
 
         return found;
     }
+
+    private static bool OrdinaryWord(string word) =>
+        word.Equals("information", StringComparison.OrdinalIgnoreCase)
+        || word.Equals("company", StringComparison.OrdinalIgnoreCase)
+        || word.Equals("private", StringComparison.OrdinalIgnoreCase)
+        || word.Equals("center", StringComparison.OrdinalIgnoreCase);
 
     private static bool ContainsPhrase(string text, string phrase)
     {

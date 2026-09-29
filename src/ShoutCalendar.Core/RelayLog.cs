@@ -32,6 +32,8 @@ public sealed class RelayLog
         var item = RelayCodec.Decode(payload);
         if (item is null || !SharePolicy.IsShareable(item.Channel) || !PlayableWorlds.TryCanonical(item.World, out var world))
             return RelayProtocol.Refused;
+        if (!ShareFormat.Accepts(item.ShareFormat))
+            return RelayProtocol.Refused;
 
         var cap = this.Limits.Clamp();
         if (itemsThisTick >= cap.MaxItemsPerTick)
@@ -72,10 +74,13 @@ public sealed class RelayLog
             return RelayProtocol.Refused;
         rows = this.events
             .Where(item => item.World.Equals(canonical, StringComparison.OrdinalIgnoreCase) && SharePolicy.IsShareable(item.Channel))
+            .Where(item => ShareFormat.Accepts(item.ShareFormat))
             .Where(item => !this.tombstones.Contains(item.ContentKey) && !this.tombstones.Contains(item.Id))
             .ToArray();
         return RelayProtocol.Ok;
     }
+
+    public int PruneLegacy() => this.events.RemoveAll(item => !ShareFormat.Accepts(item.ShareFormat));
 
     public bool Purge(string idOrKey)
     {

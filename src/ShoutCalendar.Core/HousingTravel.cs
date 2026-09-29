@@ -70,9 +70,13 @@ public static class HousingTravel
     private static readonly (string Token, string Name)[] Districts =
     [
         ("Goblet", "The Goblet"),
+        ("Lavender Beds", "The Lavender Beds"),
         ("Lavender", "The Lavender Beds"),
+        ("Lav Beds", "The Lavender Beds"),
+        ("Lav. Beds", "The Lavender Beds"),
         ("Shirogane", "Shirogane"),
         ("Empyreum", "Empyreum"),
+        ("Empy", "Empyreum"),
         ("Mist", "Mist"),
         ("Gob", "The Goblet"),
         ("LB", "The Lavender Beds"),
@@ -91,11 +95,14 @@ public static class HousingTravel
         return null;
     }
 
-    private static bool HasToken(string blob, string token) =>
-        Regex.IsMatch(
+    private static bool HasToken(string blob, string token)
+    {
+        var pattern = string.Join(@"\s+", token.Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(Regex.Escape));
+        return Regex.IsMatch(
             blob,
-            $@"(?<![A-Za-z]){Regex.Escape(token)}(?![A-Za-z])",
+            $@"(?<![A-Za-z]){pattern}(?![A-Za-z])",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
 
     private static readonly Regex PlotRegex = new(
         @"(?:\bplot[\s\-–—·•．.]*#?[\s\-–—·•．.]*|(?<![A-Za-z])[Pp])(?<n>\d{1,2})(?!\d)",
@@ -104,6 +111,15 @@ public static class HousingTravel
     private static readonly Regex WardRegex = new(
         @"(?:\bward[\s\-–—·•．.]*#?[\s\-–—·•．.]*|(?<![A-Za-z])[Ww])(?<n>\d{1,2})(?!\d)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    /// <summary>
+    /// A shout that names no world stays on the world it was sent from.
+    /// </summary>
+    public static HousingSpot? FindVenue(string? place, string? text, int? ward, string? storedServer, string? speakerWorld, string? heardOn = null)
+    {
+        var world = ShareWorld.Choose(heardOn, speakerWorld, storedServer, text);
+        return Find(place, text, ward, world.Length > 0 ? world : storedServer);
+    }
 
     public static HousingSpot? Find(string? place, string? text, int? ward, string? server)
     {

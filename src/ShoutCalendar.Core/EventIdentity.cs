@@ -52,6 +52,27 @@ public static class EventIdentity
         return SameShout(leftWorld, leftText, rightWorld, rightText);
     }
 
+    /// <summary>
+    /// One night of one party. Reposts can drop a name or swap "now" for a clock.
+    /// A different world, date, ward, or plot is a different invite.
+    /// </summary>
+    public static bool SameRepost(CalendarEntry left, CalendarEntry right)
+    {
+        if (left.Manual || right.Manual)
+            return false;
+        return SameFacts(FactsOf(left), FactsOf(right));
+    }
+
+    public static bool SameRepost(SyncAnnouncement left, SyncAnnouncement right) =>
+        SameFacts(FactsOf(left), FactsOf(right));
+
+    public static bool SameRepost(CalendarEntry local, SyncAnnouncement shared)
+    {
+        if (local.Manual)
+            return false;
+        return SameFacts(FactsOf(local), FactsOf(shared));
+    }
+
     /// <summary>The same person on shout or yell, within eight hours, is one invite unless the ward or plot changed.</summary>
     public static bool SameSpeaker(CalendarEntry current, CalendarEntry incoming, DateTimeOffset when)
     {
@@ -78,6 +99,96 @@ public static class EventIdentity
         return string.IsNullOrWhiteSpace(leftWorld)
             || string.IsNullOrWhiteSpace(rightWorld)
             || leftWorld.Equals(rightWorld, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private readonly record struct Facts(HashSet<string> Worlds, DateOnly? Day, int? Ward, int? Plot, string Title, string Text);
+
+    private static Facts FactsOf(CalendarEntry entry)
+    {
+        var text = $"{entry.EventText} {entry.Place}";
+        return new Facts(Worlds(entry.Server, entry.SpeakerWorld), entry.Date, entry.Ward ?? Number(WardRegex, text), Number(PlotRegex, text), RepostTitle(entry.EventText), entry.EventText);
+    }
+
+    private static Facts FactsOf(SyncAnnouncement item)
+    {
+        DateOnly? day = DateOnly.TryParseExact(item.Date, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var parsed)
+            ? parsed
+            : null;
+        return new Facts(Worlds(item.World, ""), day, Number(WardRegex, item.Text), Number(PlotRegex, item.Text), RepostTitle(item.Text), item.Text);
+    }
+
+    private static bool SameFacts(Facts left, Facts right)
+    {
+        if (string.IsNullOrWhiteSpace(left.Text) || string.IsNullOrWhiteSpace(right.Text))
+            return false;
+        if (left.Worlds.Count > 0 && right.Worlds.Count > 0 && !left.Worlds.Overlaps(right.Worlds))
+            return false;
+        if (left.Ward is int leftWard && right.Ward is int rightWard && leftWard != rightWard)
+            return false;
+        if (left.Plot is int leftPlot && right.Plot is int rightPlot && leftPlot != rightPlot)
+            return false;
+        if (left.Day is DateOnly leftDay && right.Day is DateOnly rightDay && leftDay != rightDay)
+            return false;
+        if (left.Title.Length >= 4 && left.Title.Equals(right.Title, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return NearCopy(left.Text, right.Text);
+    }
+
+    private static HashSet<string> Worlds(string? server, string? speaker)
+    {
+        var worlds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        AddWorlds(worlds, server);
+        AddWorlds(worlds, speaker);
+        return worlds;
+    }
+
+    private static void AddWorlds(HashSet<string> worlds, string? field)
+    {
+        if (string.IsNullOrWhiteSpace(field))
+            return;
+        foreach (var part in field.Split([',', '/', '|', '•'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (PlayableWorlds.TryCanonical(part, out var world))
+                worlds.Add(world);
+        }
+    }
+
+    private static readonly Regex MarkedName = new(
+        @"[♦◎]\s*([A-Za-z][A-Za-z0-9 ]{1,24}?)\s*[♦◎]",
+        RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private static string RepostTitle(string? text)
+    {
+        var chosen = EventTitle.Readable(EventTitle.Choose(text));
+        if (chosen.Length >= 4)
+            return chosen;
+        var plain = EventTitle.Readable(text);
+        var match = MarkedName.Match(plain);
+        if (!match.Success)
+            return "";
+        var name = match.Groups[1].Value.Trim();
+        return name.Length >= 4 ? name : "";
+    }
+
+    private static bool NearCopy(string? left, string? right)
+    {
+        var a = Fold(left);
+        var b = Fold(right);
+        if (a.Length >= 40 && b.Length >= 40 && (a.Contains(b, StringComparison.Ordinal) || b.Contains(a, StringComparison.Ordinal)))
+            return true;
+        var leftWords = Words(a);
+        var rightWords = Words(b);
+        if (leftWords.Count == 0 || rightWords.Count == 0)
+            return false;
+        var shared = leftWords.Intersect(rightWords, StringComparer.OrdinalIgnoreCase).Count();
+        var smaller = Math.Min(leftWords.Count, rightWords.Count);
+        return shared >= 6 && shared * 5 >= smaller * 4;
+    }
+
+    private static string Fold(string? text)
+    {
+        var key = EventTitle.SearchKey(text);
+        return string.Join(' ', key.Split([' ', '\r', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries));
     }
 
     private static bool SimilarChat(int left, int right)

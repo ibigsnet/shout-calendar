@@ -336,7 +336,7 @@ public sealed class WorldCalendar
         if (this.IsViewing(this.Home))
             return true;
         if (string.IsNullOrWhiteSpace(entry.Server))
-            return false;
+            return PlayableWorlds.TryCanonical(entry.SpeakerWorld, out var from) && this.IsViewing(from);
         foreach (var part in entry.Server.Split(','))
         {
             if (this.IsViewing(part.Trim()))

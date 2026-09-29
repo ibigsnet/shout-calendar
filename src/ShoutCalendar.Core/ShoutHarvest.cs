@@ -128,10 +128,20 @@ public static class ShoutHarvest
         placeParts.AddRange(locations);
         placeParts.AddRange(servers);
         var district = HousingTravel.DistrictName(text);
-        if (district is not null && !PlaceAlreadyNamesDistrict(placeParts))
-            placeParts.Add(district);
-        if (ward is not null && housingHint is not null && !PlaceAlreadyNamesDistrict(placeParts))
+        if (district is not null)
+        {
+            placeParts.RemoveAll(part =>
+            {
+                var named = HousingTravel.DistrictName(part);
+                return named is not null && !named.Equals(district, StringComparison.OrdinalIgnoreCase);
+            });
+            if (!placeParts.Any(part => part.Contains(district, StringComparison.OrdinalIgnoreCase)))
+                placeParts.Add(district);
+        }
+        else if (ward is not null && housingHint is not null && !PlaceAlreadyNamesDistrict(placeParts))
+        {
             placeParts.Add(housingHint);
+        }
 
         var strongDate = writtenDate is not null;
         var strongTime = pinnedSpan || (clocks.Count > 0 && !nowOnly);

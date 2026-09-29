@@ -96,6 +96,8 @@ public sealed class Plugin : IDalamudPlugin
         this.session.AlarmAccepted = this.config.AlarmAccepted;
         this.session.AlarmChat = this.config.AlarmChat ?? true;
         this.session.DropPastEvents = this.config.DropPastEvents;
+        this.session.ShowPastLocal = this.config.ShowPastLocal;
+        this.session.ShowPastSync = this.config.ShowPastSync;
         this.session.TextScale = this.config.TextScale is >= 0.85f and <= 2f ? this.config.TextScale : 1f;
         this.session.AlarmUnaccepted = this.config.AlarmUnaccepted;
         this.session.AcceptedSound = EventAlarm.ClampSound(this.config.AcceptedSound);
@@ -127,7 +129,9 @@ public sealed class Plugin : IDalamudPlugin
         this.session.ShowAllServers = this.config.ShowAllServers;
         this.session.PauseInPvp = this.config.PauseInPvp ?? true;
         this.session.ShowResets = this.config.ShowResets ?? true;
-        this.session.LightCalendar = this.config.LightCalendar;
+        this.session.LightCalendar = this.config.FastCalendar ?? true;
+        this.session.ParseDebug = this.config.ParseDebug;
+        this.session.WeekView = this.config.WeekView;
         this.session.SyncPendingColor = Shown(this.config.SyncPendingColor, new Vector4(0.63f, 0.28f, 0.72f, 0.95f));
         this.session.SharedBarColor = Shown(this.config.SharedBarColor, new Vector4(0.95f, 0.05f, 0.05f, 1f));
         this.session.TwitchColor = Shown(this.config.TwitchColor, new Vector4(0.569f, 0.275f, 1f, 0.95f));
@@ -135,6 +139,11 @@ public sealed class Plugin : IDalamudPlugin
         this.session.UseResets(this.config.EnabledResets);
         this.session.CactpotRegion = GameSchedule.NormalizeRegion(this.config.CactpotRegion);
         this.session.Log.Restore(this.config.ToEntries());
+        foreach (var id in this.config.PinnedSync ?? [])
+        {
+            if (!string.IsNullOrWhiteSpace(id))
+                this.session.PinnedSync.Add(id);
+        }
         var repaired = this.session.Log.Reharvest(entry =>
         {
             var when = entry.DetectedAt == default ? DateTimeOffset.Now : entry.DetectedAt;
@@ -149,7 +158,8 @@ public sealed class Plugin : IDalamudPlugin
                 aggressive: false,
                 zone: this.session.Zone);
         });
-        if (repaired > 0 || this.session.Log.ExpireUnaccepted(DateTimeOffset.UtcNow, this.session.UnacceptedHoldDays) > 0)
+        var folded = this.session.Log.FoldReposts();
+        if (repaired > 0 || folded > 0 || this.session.Log.ExpireUnaccepted(DateTimeOffset.UtcNow, this.session.UnacceptedHoldDays) > 0)
             this.Save();
 
         this.window = new CalendarWindow(this.session, this.clearPrompt, this.Save, this.PlayAlarm, this.dialogs, this.OpenPin, this.OpenHousing, this.RequestSyncNow, this.ShowMacroHelper, this.RequestSyncResync);
@@ -291,30 +301,49 @@ public sealed class Plugin : IDalamudPlugin
         if (this.alarmMinute != minute)
             this.alarmMinute = minute;
 
-        this.RingNewlyAccepted(hits, now);
+        var rings = new List<AlarmNotice.Ring>();
         foreach (var hit in hits)
         {
             var entry = this.session.Log.Entries.FirstOrDefault(candidate => candidate.Id == hit.Id);
             if (entry is null)
                 continue;
             var lead = hit.AtStart ? 0 : this.session.AlarmMinutesBefore;
-            this.Announce(entry, hit.Accepted, lead);
+            rings.Add(new AlarmNotice.Ring(entry, lead, hit.Accepted));
         }
+
+        this.CollectNewlyAccepted(rings, now);
+        var unique = AlarmNotice.Dedupe(rings);
+        if (unique.Count == 0)
+            return;
+        if (this.session.AlarmChat)
+        {
+            var text = AlarmNotice.Broadcast(unique, this.session.CurrentWorld);
+            if (text.Length > 0)
+                ChatGui.Print(text);
+        }
+
+        if (unique.Any(ring => ring.Accepted))
+            this.PlayAlarm(this.session.AcceptedSound, this.session.AcceptedSoundFile);
+        if (unique.Any(ring => !ring.Accepted))
+            this.PlayAlarm(this.session.UnacceptedSound, this.session.UnacceptedSoundFile);
     }
 
-    private void RingNewlyAccepted(IReadOnlyList<EventAlarm.Hit> already, DateTime now)
+    private void CollectNewlyAccepted(List<AlarmNotice.Ring> rings, DateTime now)
     {
-        var due = new List<CalendarEntry>();
         void Consider(CalendarEntry entry, string key)
         {
             if (string.IsNullOrEmpty(entry.Id) || !this.alarmSeen.Add(key))
                 return;
             if (!this.alarmSeeded || !this.session.AlarmAccepted)
                 return;
-            if (already.Any(hit => hit.Id == entry.Id))
+            if (rings.Any(ring => ring.Entry.Id == entry.Id))
                 return;
-            if (EventAlarm.AlreadyDue(entry, now, this.session.AlarmMinutesBefore, TimeZoneInfo.Local))
-                due.Add(entry);
+            if (!EventAlarm.AlreadyDue(entry, now, this.session.AlarmMinutesBefore, TimeZoneInfo.Local))
+                return;
+            var lead = this.session.AlarmAtStart && EventAlarm.IsStartMinute(entry, now, TimeZoneInfo.Local)
+                ? 0
+                : this.session.AlarmMinutesBefore;
+            rings.Add(new AlarmNotice.Ring(entry, lead, true));
         }
 
         foreach (var entry in this.session.Log.Entries)
@@ -340,34 +369,7 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         if (!this.alarmSeeded)
-        {
             this.alarmSeeded = true;
-            return;
-        }
-
-        if (due.Count == 0)
-            return;
-        foreach (var entry in due)
-        {
-            if (this.session.AlarmChat)
-            {
-                var lead = this.session.AlarmAtStart && EventAlarm.IsStartMinute(entry, now, TimeZoneInfo.Local)
-                    ? 0
-                    : this.session.AlarmMinutesBefore;
-                ChatGui.Print(AlarmNotice.Line(entry, lead, this.session.CurrentWorld));
-            }
-        }
-
-        this.PlayAlarm(this.session.AcceptedSound, this.session.AcceptedSoundFile);
-    }
-
-    private void Announce(CalendarEntry entry, bool accepted, int minutesBefore)
-    {
-        if (this.session.AlarmChat)
-            ChatGui.Print(AlarmNotice.Line(entry, minutesBefore, this.session.CurrentWorld));
-        this.PlayAlarm(
-            accepted ? this.session.AcceptedSound : this.session.UnacceptedSound,
-            accepted ? this.session.AcceptedSoundFile : this.session.UnacceptedSoundFile);
     }
 
     private void PlayAlarm(int sound, string? file)
@@ -1126,10 +1128,13 @@ public sealed class Plugin : IDalamudPlugin
             return;
         var sender = message.Sender.TextValue;
         this.session.HousingHint = this.CurrentHousingDistrict();
-        if (!this.session.TryAddShout(text, (int)message.LogKind, when, sender, SpeakerHome(message)))
+        var kept = this.session.KeepShout(text, (int)message.LogKind, when, sender, SpeakerHome(message));
+        if (kept is null)
             return;
 
         this.Save();
+        if (this.session.ParseDebug)
+            ChatGui.Print(ParseDebug.Line(kept));
     }
 
     internal static unsafe bool AskTell(string command)
@@ -1252,6 +1257,8 @@ public sealed class Plugin : IDalamudPlugin
         this.config.AlarmAccepted = this.session.AlarmAccepted;
         this.config.AlarmChat = this.session.AlarmChat;
         this.config.DropPastEvents = this.session.DropPastEvents;
+        this.config.ShowPastLocal = this.session.ShowPastLocal;
+        this.config.ShowPastSync = this.session.ShowPastSync;
         this.config.TextScale = this.session.TextScale is >= 0.85f and <= 2f ? this.session.TextScale : 1f;
         this.config.AlarmUnaccepted = this.session.AlarmUnaccepted;
         this.config.AcceptedSound = EventAlarm.ClampSound(this.session.AcceptedSound);
@@ -1281,7 +1288,10 @@ public sealed class Plugin : IDalamudPlugin
         this.config.ShowAllServers = this.session.ShowAllServers;
         this.config.PauseInPvp = this.session.PauseInPvp;
         this.config.ShowResets = this.session.ShowResets;
-        this.config.LightCalendar = this.session.LightCalendar;
+        this.config.FastCalendar = this.session.LightCalendar;
+        this.config.ParseDebug = this.session.ParseDebug;
+        this.config.WeekView = this.session.WeekView;
+        this.config.PinnedSync = this.session.PinnedSync.Order(StringComparer.Ordinal).ToList();
         this.config.SyncPendingColor = this.session.SyncPendingColor;
         this.config.SharedBarColor = this.session.SharedBarColor;
         this.config.TwitchColor = this.session.TwitchColor;
@@ -1445,11 +1455,33 @@ public sealed class Plugin : IDalamudPlugin
         return true;
     }
 
+    internal static bool SyncEnabled()
+    {
+        if (SyncGate.IsAttached)
+            return true;
+        foreach (var plugin in PluginInterface.InstalledPlugins)
+        {
+            if (plugin.IsLoaded && plugin.InternalName.Equals("ShoutCalendar.Sync", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static string PluginVersion()
+    {
+        var version = typeof(Plugin).Assembly.GetName().Version;
+        if (version is null)
+            return "";
+        var text = version.ToString();
+        return text.EndsWith(".0", StringComparison.Ordinal) ? text[..^2] : text;
+    }
+
     private string OnSyncPull(byte[] signature)
     {
         if (this.PausedForPvp() || !SyncGate.AllowRead(signature) || this.syncBook is null)
             return "";
-        var rows = SyncExport.FromLocal(this.syncBook, this.session.Log.Entries, this.session.Places);
+        var rows = SyncExport.FromLocal(this.syncBook, this.session.Log.Entries, this.session.Places, PluginVersion());
         return System.Text.Encoding.UTF8.GetString(RelayCodec.EncodeList(rows));
     }
 
@@ -1530,7 +1562,11 @@ public sealed class Plugin : IDalamudPlugin
     {
         if (!SyncGate.AllowWrite(signature) || this.syncBook is null)
             return false;
-        return this.syncBook.ApplyJson(json);
+        if (!this.syncBook.ApplyJson(json))
+            return false;
+        if (this.session.Log.Absorb(this.syncBook.CopyEvents()) > 0)
+            this.Save();
+        return true;
     }
 
     private string DetectedWorld(string fallback)

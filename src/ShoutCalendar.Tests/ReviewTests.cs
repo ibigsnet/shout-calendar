@@ -376,6 +376,7 @@ public class ReviewTests
         Assert.Contains("Teleport: New Gridania aetheryte", line, StringComparison.Ordinal);
         Assert.Contains("The Lavender Beds ward 14", line, StringComparison.Ordinal);
         Assert.Contains("starts in 15 minutes", line, StringComparison.Ordinal);
+        Assert.True(line.IndexOf("starts in 15 minutes", StringComparison.Ordinal) < line.IndexOf("Server hop", StringComparison.Ordinal));
         Assert.Contains("18:00", line, StringComparison.Ordinal);
         Assert.Contains("2026-09-27", line, StringComparison.Ordinal);
         Assert.DoesNotContain("3pm PT", line, StringComparison.Ordinal);

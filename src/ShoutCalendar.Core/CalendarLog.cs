@@ -21,19 +21,13 @@ public sealed class CalendarLog
         if (entry is null)
             return false;
         var when = entry.DetectedAt == default ? DateTimeOffset.UtcNow : entry.DetectedAt;
-        var same = this.entries.FindIndex(row => EventIdentity.SameEntry(row, entry) || EventIdentity.SameSpeaker(row, entry, when));
+        var same = this.entries.FindIndex(row =>
+            EventIdentity.SameRepost(row, entry)
+            || EventIdentity.SameEntry(row, entry)
+            || EventIdentity.SameSpeaker(row, entry, when));
         if (same >= 0)
         {
-            var current = this.entries[same];
-            this.entries[same] = Stamp(entry with
-            {
-                Id = current.Id,
-                Accepted = current.Accepted || entry.Accepted,
-                Sender = string.IsNullOrWhiteSpace(entry.Sender) ? current.Sender : entry.Sender,
-                SpeakerWorld = string.IsNullOrWhiteSpace(entry.SpeakerWorld) ? current.SpeakerWorld : entry.SpeakerWorld,
-                Manual = current.Manual,
-                DetectedAt = current.DetectedAt == default ? entry.DetectedAt : current.DetectedAt,
-            });
+            this.entries[same] = Stamp(Merge(this.entries[same], entry));
             this.Touch();
             return true;
         }
@@ -43,6 +37,55 @@ public sealed class CalendarLog
         this.entries.Add(Stamp(entry));
         this.Touch();
         return true;
+    }
+
+    /// <summary>Collapse reposts already stored. The kept row gains a missing clock, place, or the fuller shout.</summary>
+    public int FoldReposts()
+    {
+        var removed = 0;
+        for (var i = 0; i < this.entries.Count; i++)
+        {
+            for (var j = i + 1; j < this.entries.Count;)
+            {
+                if (!EventIdentity.SameRepost(this.entries[i], this.entries[j]))
+                {
+                    j++;
+                    continue;
+                }
+
+                this.entries[i] = Merge(this.entries[i], this.entries[j]);
+                this.entries.RemoveAt(j);
+                removed++;
+            }
+        }
+
+        if (removed > 0)
+            this.Touch();
+        return removed;
+    }
+
+    /// <summary>Fill a local invite from the shared copy of the same night. Does not accept it.</summary>
+    public int Absorb(IEnumerable<SyncAnnouncement> shared)
+    {
+        var changed = 0;
+        foreach (var item in shared)
+        {
+            if (string.IsNullOrWhiteSpace(item.Text))
+                continue;
+            var incoming = FromShared(item);
+            var index = this.entries.FindIndex(row => EventIdentity.SameRepost(row, incoming));
+            if (index < 0)
+                continue;
+            var merged = Merge(this.entries[index], incoming);
+            if (merged == this.entries[index])
+                continue;
+            this.entries[index] = merged;
+            changed++;
+        }
+
+        if (changed > 0)
+            this.Touch();
+        return changed;
     }
 
     public int Reharvest(Func<CalendarEntry, CalendarEntry?> read)
@@ -64,7 +107,7 @@ public sealed class CalendarLog
                 End = refreshClocks ? next.End ?? current.End : current.End ?? next.End,
                 Ward = current.Ward ?? next.Ward,
                 Server = string.IsNullOrWhiteSpace(current.Server) ? next.Server : current.Server,
-                Place = next.Place.Length > current.Place.Length ? next.Place : current.Place,
+                Place = PreferPlace(current.Place, next.Place),
             };
             if (updated == current)
                 continue;
@@ -75,6 +118,96 @@ public sealed class CalendarLog
         if (changed > 0)
             this.Touch();
         return changed;
+    }
+
+    private static CalendarEntry Merge(CalendarEntry current, CalendarEntry incoming)
+    {
+        var text = current.EventText ?? "";
+        var time = current.Time;
+        var end = current.End;
+        if (!current.NoteUpdated)
+        {
+            var currentNow = ZoneClock.TryNowUntil(current.EventText, out _);
+            var incomingNow = ZoneClock.TryNowUntil(incoming.EventText, out _);
+            if (!incomingNow && incoming.Time is not null && ZoneClock.Walls(incoming.EventText).Count > 0)
+            {
+                time = incoming.Time;
+                end = incoming.End ?? (currentNow ? null : end);
+            }
+            else
+            {
+                time ??= incoming.Time;
+                end ??= incoming.End;
+            }
+
+            if (!incomingNow && (currentNow || (incoming.EventText?.Length ?? 0) > text.Length))
+                text = incoming.EventText ?? text;
+
+            if (end is null)
+            {
+                var walls = ZoneClock.Walls(text);
+                if (walls.Count >= 2)
+                    end = walls[1].Time;
+            }
+        }
+
+        return current with
+        {
+            EventText = text,
+            Date = current.Date ?? incoming.Date,
+            Time = time,
+            End = end,
+            Ward = current.Ward ?? incoming.Ward,
+            Server = string.IsNullOrWhiteSpace(current.Server) ? incoming.Server ?? "" : current.Server,
+            Place = string.IsNullOrWhiteSpace(incoming.Place) ? current.Place : PreferPlace(current.Place, incoming.Place),
+            Sender = string.IsNullOrWhiteSpace(incoming.Sender) ? current.Sender : incoming.Sender,
+            SpeakerWorld = string.IsNullOrWhiteSpace(incoming.SpeakerWorld) ? current.SpeakerWorld : incoming.SpeakerWorld,
+            Accepted = current.Accepted || incoming.Accepted,
+            Pinned = current.Pinned || incoming.Pinned,
+            Channel = current.Channel != 0 ? current.Channel : incoming.Channel,
+            DetectedAt = current.DetectedAt == default ? incoming.DetectedAt : current.DetectedAt,
+        };
+    }
+
+    private static CalendarEntry FromShared(SyncAnnouncement item)
+    {
+        DateOnly? date = DateOnly.TryParseExact(item.Date, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var day)
+            ? day
+            : null;
+        TimeOnly? time = TimeOnly.TryParseExact(item.Time, "HH:mm", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var clock)
+            ? clock
+            : null;
+        var walls = ZoneClock.Walls(item.Text);
+        if (time is null && walls.Count > 0)
+            time = walls[0].Time;
+        TimeOnly? end = walls.Count >= 2 ? walls[1].Time : null;
+        return new CalendarEntry(date, time, end, NumberFrom(item.Text), item.World, "", item.Text ?? "", "", false, item.Id, default);
+    }
+
+    private static int? NumberFrom(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return null;
+        var match = System.Text.RegularExpressions.Regex.Match(text, @"\b(?:ward\s*|[Ww])(\d{1,2})\b");
+        return match.Success && int.TryParse(match.Groups[1].Value, out var number) ? number : null;
+    }
+
+    private static string PreferPlace(string current, string next)
+    {
+        if (string.IsNullOrWhiteSpace(current))
+            return next ?? "";
+        if (string.IsNullOrWhiteSpace(next))
+        {
+            if (current.Contains("ward", StringComparison.OrdinalIgnoreCase) || current.Contains("plot", StringComparison.OrdinalIgnoreCase))
+                return current;
+            return "";
+        }
+
+        var nextDistrict = HousingTravel.DistrictName(next);
+        var currentDistrict = HousingTravel.DistrictName(current);
+        if (nextDistrict is not null && !nextDistrict.Equals(currentDistrict, StringComparison.OrdinalIgnoreCase))
+            return next;
+        return next.Length >= current.Length ? next : current;
     }
 
     public bool Rewrite(string id, CalendarEntry incoming)
@@ -165,6 +298,16 @@ public sealed class CalendarLog
         if (index < 0 || this.entries[index].Accepted)
             return false;
         this.entries[index] = this.entries[index] with { Accepted = true, Hidden = false };
+        this.Touch();
+        return true;
+    }
+
+    public bool SetPinned(string id, bool pinned)
+    {
+        var index = this.entries.FindIndex(entry => entry.Id == id);
+        if (index < 0 || this.entries[index].Pinned == pinned)
+            return false;
+        this.entries[index] = this.entries[index] with { Pinned = pinned };
         this.Touch();
         return true;
     }
