@@ -342,21 +342,34 @@ public sealed class WorldCalendar
         };
     }
 
+    /// <summary>
+    /// A hand-added event stays on every open calendar.
+    /// A heard invite follows the world it names. With no world, it stays on this character's home calendar.
+    /// </summary>
     public bool ShowsLocal(CalendarEntry entry)
     {
         if (entry.Manual)
             return true;
-        if (this.IsViewing(this.Home))
-            return true;
-        if (string.IsNullOrWhiteSpace(entry.Server))
-            return PlayableWorlds.TryCanonical(entry.SpeakerWorld, out var from) && this.IsViewing(from);
-        foreach (var part in entry.Server.Split(','))
+        if (ServerNames.TryAdvertised(entry.EventText, out var advertised))
+            return this.IsViewing(advertised);
+        var named = false;
+        if (!string.IsNullOrWhiteSpace(entry.Server))
         {
-            if (this.IsViewing(part.Trim()))
-                return true;
+            foreach (var part in entry.Server.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (!PlayableWorlds.TryCanonical(part, out var world))
+                    continue;
+                named = true;
+                if (this.IsViewing(world))
+                    return true;
+            }
         }
 
-        return false;
+        if (named)
+            return false;
+        if (PlayableWorlds.TryCanonical(entry.SpeakerWorld, out var from) && this.IsViewing(from))
+            return true;
+        return this.IsViewing(this.Home);
     }
 
     public void ClearExtras()

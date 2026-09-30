@@ -7,6 +7,6 @@
   "Tags": [
     "utility"
   ],
-  "Changelog": "A tell is addressed to the player who shouted. A place is not used as the name.",
-  "IconUrl": "https://raw.githubusercontent.com/ibigsnet/shout-calendar/v0.1.34/images/icon.png"
+  "Changelog": "A heard invite stays on the world it names.",
+  "IconUrl": "https://raw.githubusercontent.com/ibigsnet/shout-calendar/v0.1.35/images/icon.png"
 }

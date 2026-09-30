@@ -348,7 +348,7 @@ public class HarvestTests
     }
 
     [Fact]
-    public void AZaleraInviteStaysVisibleOnTheHomeCalendar()
+    public void AHeardInviteFollowsTheWorldItNames()
     {
         var worlds = new WorldCalendar("Diabolos");
         var row = new CalendarEntry(
@@ -375,8 +375,26 @@ public class HarvestTests
         Assert.True(worlds.ShowsLocal(row));
         var heard = row with { Manual = false, Channel = 11 };
         Assert.False(worlds.ShowsLocal(heard));
-        Assert.True(worlds.Select("Diabolos"));
+        Assert.True(worlds.Select("Zalera"));
         Assert.True(worlds.ShowsLocal(heard));
+        Assert.True(worlds.Select("Diabolos"));
+        Assert.False(worlds.ShowsLocal(heard));
+        var elsewhere = heard with { Server = "Dynamis, Cuchulainn", SpeakerWorld = "Zalera" };
+        Assert.False(worlds.ShowsLocal(elsewhere));
+        worlds.SetChecked("Cuchulainn", true);
+        worlds.SetViewing("Cuchulainn", true);
+        Assert.True(worlds.ShowsLocal(elsewhere));
+        var misfiled = heard with
+        {
+            Server = "Diabolos",
+            EventText = "Tonight at Goblet ward 4 plot 43 on Cuchulainn",
+        };
+        Assert.True(worlds.Select("Diabolos"));
+        Assert.False(worlds.ShowsLocal(misfiled));
+        var unnamed = heard with { Server = "", SpeakerWorld = "Zalera", EventText = "Tonight at Goblet ward 4 plot 43" };
+        Assert.True(worlds.ShowsLocal(unnamed));
+        Assert.True(worlds.Select("Goblin"));
+        Assert.False(worlds.ShowsLocal(unnamed));
     }
 
     [Fact]

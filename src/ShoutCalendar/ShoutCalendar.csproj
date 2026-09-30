@@ -1,6 +1,6 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <Version>0.1.34</Version>
+    <Version>0.1.35</Version>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -9,7 +9,7 @@
     <Name>Shout Calendar</Name>
     <RepoUrl>https://github.com/ibigsnet/shout-calendar</RepoUrl>
     <Tags>utility</Tags>
-    <IconUrl>https://raw.githubusercontent.com/ibigsnet/shout-calendar/v0.1.34/images/icon.png</IconUrl>
+    <IconUrl>https://raw.githubusercontent.com/ibigsnet/shout-calendar/v0.1.35/images/icon.png</IconUrl>
     <Punchline>Turns FFXIV chat invites into a month calendar you accept yourself.</Punchline>
     <Description>Shout Calendar is the standalone calendar plugin. It listens to the chats you choose and keeps event invites on a month calendar until you accept them. It works without Shout Calendar Sync and does not send anything to other players. Install the optional Shout Calendar Sync companion to share public Shout and Yell invites.
 
@@ -20,7 +20,7 @@ Add event keeps a pasted or typed invite on this computer. Save accepts a pendin
 The Resets tab adds Jumbo Cactpot, the weekly reset, and limited events such as A Nocturne for Heroes. Those three start on. Resets that share a clock share one line. Alarms play a chat sound from se.1 to se.16, or a WAV you choose, 15 minutes before an accepted event by default. Unaccepted invites are held for 1 day. Colors are yours to set. Today starts as a light wash.
 
 /shoutcalendar opens the calendar. /shoutcalendar test checks a line on your machine and does not send chat.</Description>
-    <Changelog>A tell is addressed to the player who shouted. A place is not used as the name.</Changelog>
+    <Changelog>A heard invite stays on the world it names.</Changelog>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\ShoutCalendar.Core\ShoutCalendar.Core.csproj" />
