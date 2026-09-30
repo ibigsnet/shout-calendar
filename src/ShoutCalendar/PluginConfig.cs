@@ -109,6 +109,8 @@ public sealed class PluginConfig : IPluginConfiguration
 
     public float WeekDetailShare { get; set; } = 0.28f;
 
+    public bool ShowLocalHere { get; set; }
+
     public bool ShowAllServers { get; set; }
     public PendingScope? PendingScope { get; set; }
 

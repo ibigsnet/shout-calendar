@@ -7,6 +7,6 @@
   "Tags": [
     "utility"
   ],
-  "Changelog": "A heard invite stays on the world it names.",
-  "IconUrl": "https://raw.githubusercontent.com/ibigsnet/shout-calendar/v0.1.35/images/icon.png"
+  "Changelog": "With Sync on, the bar reads Local + Sync. A shout for another world stays on that world.",
+  "IconUrl": "https://raw.githubusercontent.com/ibigsnet/shout-calendar/v0.1.36/images/icon.png"
 }

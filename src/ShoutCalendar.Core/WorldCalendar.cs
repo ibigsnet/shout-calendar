@@ -372,6 +372,19 @@ public sealed class WorldCalendar
         return this.IsViewing(this.Home);
     }
 
+    /// <summary>
+    /// The open calendar follows <see cref="ShowsLocal"/>.
+    /// When <paramref name="includeCurrentServer"/> is set, a shout heard here also stays on the server you are standing on.
+    /// </summary>
+    public bool ShowsOnOpenCalendar(CalendarEntry entry, bool includeCurrentServer, string? standing)
+    {
+        if (this.ShowsLocal(entry))
+            return true;
+        if (!includeCurrentServer)
+            return false;
+        return PlayableWorlds.TryCanonical(standing, out var here) && this.IsViewing(here);
+    }
+
     public void ClearExtras()
     {
         this.extras.Clear();

@@ -198,6 +198,7 @@ public sealed partial class CalendarWindow : Window
         this.DrawDropPast();
         this.DrawAggressiveFilter();
         this.DrawInformedaholic();
+        this.DrawLocalHere();
         this.DrawLinkChoice();
         this.DrawChannelOptions();
         this.DrawAlarms();
@@ -328,7 +329,7 @@ public sealed partial class CalendarWindow : Window
 
     private void DrawSharedBanner(SyncBook book)
     {
-        var label = DataCenters.SharedOn(book.Worlds.Viewing()).Replace("Shared on", "Viewing calendars:", StringComparison.Ordinal) + " · details";
+        var label = DataCenters.ViewingLabel(book.Worlds.Viewing());
         var width = MathF.Max(1f, ImGui.GetContentRegionAvail().X);
         var size = ImGui.CalcTextSize(label, false, MathF.Max(1f, width - 8f));
         var pos = ImGui.GetCursorScreenPos();
@@ -345,7 +346,7 @@ public sealed partial class CalendarWindow : Window
         ImGui.PopStyleColor();
         if (ImGui.IsMouseHoveringRect(pos, pos + new Vector2(width, height)))
         {
-            ImGui.SetTooltip("Selected calendars. Click for event counts by destination.");
+            ImGui.SetTooltip("Local shouts and sync for the open calendars. Click for counts by destination.");
             if (ImGui.IsMouseClicked(ImGuiMouseButton.Left)) this.serverDetails = !this.serverDetails;
         }
         ImGui.SetCursorScreenPos(new Vector2(pos.X, pos.Y + height + 2f));
@@ -560,6 +561,18 @@ public sealed partial class CalendarWindow : Window
         }
 
         ImGui.TextWrapped("Kept invites are accepted for you, so they skip the pending list. The filter still decides which lines are invites.");
+    }
+
+    private void DrawLocalHere()
+    {
+        var on = this.session.ShowLocalHere;
+        if (ImGui.Checkbox("Show local shouts on your current server##local-here", ref on))
+        {
+            this.session.ShowLocalHere = on;
+            this.save();
+        }
+
+        ImGui.TextWrapped("With Sync on, a shout for another world stays on that world. Check this to also list it on the server you are standing on.");
     }
 
     private void DrawLinkChoice()
@@ -3377,7 +3390,9 @@ public sealed partial class CalendarWindow : Window
 
         if (SyncGate.Panel is not SyncBook book)
             return !pendingList || this.ShowsPendingWorld(entry.EventText, entry.Server);
-        return pendingList ? this.ShowsPendingWorld(entry.EventText, entry.Server) : book.Worlds.ShowsLocal(entry);
+        if (pendingList)
+            return this.ShowsPendingWorld(entry.EventText, entry.Server);
+        return book.Worlds.ShowsOnOpenCalendar(entry, this.session.ShowLocalHere, this.StandingWorld());
     }
 
     private SyncAnnouncement[] FrameForDraw(SyncBook? book)

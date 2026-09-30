@@ -393,6 +393,9 @@ public class HarvestTests
         Assert.False(worlds.ShowsLocal(misfiled));
         var unnamed = heard with { Server = "", SpeakerWorld = "Zalera", EventText = "Tonight at Goblet ward 4 plot 43" };
         Assert.True(worlds.ShowsLocal(unnamed));
+        Assert.False(worlds.ShowsOnOpenCalendar(heard, false, "Diabolos"));
+        Assert.True(worlds.ShowsOnOpenCalendar(heard, true, "Diabolos"));
+        Assert.False(worlds.ShowsOnOpenCalendar(heard, true, "Zalera"));
         Assert.True(worlds.Select("Goblin"));
         Assert.False(worlds.ShowsLocal(unnamed));
     }
@@ -663,6 +666,8 @@ public class HarvestTests
     public void SharedOnSummarizesAFullDataCenter()
     {
         var crystal = DataCenters.All.First(group => group.Name == "Crystal").Worlds;
+        Assert.Equal("Viewing calendars: Local + Sync: Diabolos · details", DataCenters.ViewingLabel(["Diabolos"]));
+        Assert.Equal("Viewing calendars: Local + Sync: all of Crystal · details", DataCenters.ViewingLabel(crystal));
         Assert.Equal("Shared on all of Crystal", DataCenters.SharedOn(crystal));
         Assert.Equal("Shared on all of Crystal except Coeurl", DataCenters.SharedOn(crystal.Where(name => name != "Coeurl")));
         Assert.Equal("Shared on Diabolos, Mateus, and Zalera", DataCenters.SharedOn(["Diabolos", "Mateus", "Zalera"]));

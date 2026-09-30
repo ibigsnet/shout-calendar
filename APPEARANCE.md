@@ -66,7 +66,7 @@ Three controls have separate purposes:
 
 **Pending from** appears only while Sync is attached and offers Current world, Open calendars, and All synced worlds. It does not subscribe to all game worlds. When Sync is disabled, uninstalled or not attached, Pending contains only locally collected invitations; the saved Sync scope does not filter those invitations. Local channel, hidden, past-event and acceptance filters still apply. Re-enabling Sync restores the saved scope. The former Show all servers preference migrates to Current world or Open calendars. Sync acceptance filters are also hidden in both normal and compact views while Sync is absent.
 
-The red **Viewing calendars** bar stays visible even if Pending is empty or invitations were auto-accepted. It still summarizes data centers compactly. Click it to expand counts of event occurrences in the displayed date range under the current calendar filters. Overnight continuation chips count once; separate recurring occurrences count separately. Counts use advertised destinations when present, otherwise the stored world. The bar can be hidden in Appearance.
+While Sync is attached, the red bar reads **Viewing calendars: Local + Sync:** and then the open worlds. It stays visible even if Pending is empty or invitations were auto-accepted. It still summarizes data centers compactly. Click it to expand counts of event occurrences in the displayed date range under the current calendar filters. Overnight continuation chips count once; separate recurring occurrences count separately. Counts use advertised destinations when present, otherwise the stored world. The bar can be hidden in Appearance.
 
 ## Hunt trains and other gatherings happening now
 

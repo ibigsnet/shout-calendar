@@ -133,6 +133,7 @@ public sealed class Plugin : IDalamudPlugin
         this.session.WeekDetailShare = this.config.WeekDetailShare is > 0.08f and < 0.85f
             ? this.config.WeekDetailShare
             : 0.28f;
+        this.session.ShowLocalHere = this.config.ShowLocalHere;
         this.session.ShowAllServers = this.config.ShowAllServers;
         this.session.PendingScope = this.config.PendingScope ?? (this.config.ShowAllServers ? PendingScope.OpenCalendars : PendingScope.CurrentWorld);
         this.session.PauseInPvp = this.config.PauseInPvp ?? true;
@@ -1310,6 +1311,7 @@ public sealed class Plugin : IDalamudPlugin
         this.config.ShowHidden = this.session.ShowHidden;
         this.config.NewestFirst = this.session.NewestFirst;
         this.config.WeekDetailShare = this.session.WeekDetailShare;
+        this.config.ShowLocalHere = this.session.ShowLocalHere;
         this.config.ShowAllServers = this.session.PendingScope != PendingScope.CurrentWorld;
         this.config.PendingScope = this.session.PendingScope;
         this.config.PauseInPvp = this.session.PauseInPvp;

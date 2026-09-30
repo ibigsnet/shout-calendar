@@ -141,6 +141,9 @@ public sealed class CalendarSession
     /// <summary>Share of the week view given to the event panel under the days. 0.28 matches the built-in split.</summary>
     public float WeekDetailShare { get; set; } = 0.28f;
 
+    /// <summary>When set, a shout heard here also stays on the server you are standing on.</summary>
+    public bool ShowLocalHere { get; set; }
+
     /// <summary>When set, pending invites that name another world stay on the list and on the calendar.</summary>
     public bool ShowAllServers { get; set; }
     public PendingScope PendingScope { get; set; }

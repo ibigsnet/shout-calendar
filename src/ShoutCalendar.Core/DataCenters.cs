@@ -88,6 +88,15 @@ public static class DataCenters
         return parts.Count == 0 ? "Shared on no worlds" : "Shared on " + Join(parts);
     }
 
+    /// <summary>Banner while Sync is attached. Local shouts and the open sync calendars share one grid.</summary>
+    public static string ViewingLabel(IEnumerable<string> viewing)
+    {
+        var summary = SharedOn(viewing);
+        const string lead = "Shared on ";
+        var worlds = summary.StartsWith(lead, StringComparison.Ordinal) ? summary[lead.Length..] : summary;
+        return "Viewing calendars: Local + Sync: " + worlds + " · details";
+    }
+
     private static string Join(IReadOnlyList<string> names)
     {
         if (names.Count <= 1)

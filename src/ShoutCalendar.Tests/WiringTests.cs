@@ -89,6 +89,8 @@ public class WiringTests
         Assert.Contains("You currently have the calendars for the following servers open:", File.ReadAllText(Path.Combine(root, "src", "ShoutCalendar.Core", "ClearPrompt.cs")), StringComparison.Ordinal);
         Assert.DoesNotContain("sync-tabs", window, StringComparison.Ordinal);
         Assert.Contains("Informedaholic: accept every invite you see", window, StringComparison.Ordinal);
+        Assert.Contains("Show local shouts on your current server", window, StringComparison.Ordinal);
+        Assert.Contains("ViewingLabel", window, StringComparison.Ordinal);
         Assert.Contains("Remember this choice##link-settings", window, StringComparison.Ordinal);
         Assert.Contains("Remember this choice##link-popup", window, StringComparison.Ordinal);
         Assert.Contains("Open this link in your browser?", window, StringComparison.Ordinal);
