@@ -50,6 +50,26 @@ public static class SenderName
         return (clean, preferred);
     }
 
+    /// <summary>A forename and surname. A venue, ward, or plot is not a character.</summary>
+    public static bool IsCharacter(string? name)
+    {
+        var words = Clean(name).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length != 2)
+            return false;
+        foreach (var word in words)
+        {
+            if (word.Length is < 2 or > 15 || NotAName.Contains(word))
+                return false;
+        }
+
+        return true;
+    }
+
+    private static readonly HashSet<string> NotAName = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "ward", "plot", "the", "goblet", "mist", "shirogane", "empyreum", "lavender", "beds", "subdivision", "district",
+    };
+
     private static bool TryStrip(string clean, string world, out string name)
     {
         name = clean;

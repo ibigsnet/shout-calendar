@@ -2998,7 +2998,8 @@ public sealed partial class CalendarWindow : Window
             return;
         }
 
-        this.DrawInviteGlanceText(item.Text, SyncDay(item), SyncWhen(item), ListedWorld(item), item.Place);
+        var (sender, speakerWorld) = this.LocalSpeaker(item);
+        this.DrawInviteGlanceText(item.Text, SyncDay(item), SyncWhen(item), ListedWorld(item), sender, speakerWorld, item.Id);
         this.DrawClockFix(
             "sync-" + item.Id,
             SyncDay(item),
@@ -3093,7 +3094,24 @@ public sealed partial class CalendarWindow : Window
         }
     }
 
-    private void DrawInviteGlanceText(string text, string date, string time, string world, string sender)
+    private (string Sender, string World) LocalSpeaker(SyncAnnouncement item)
+    {
+        (string Sender, string World)? heard = null;
+        foreach (var entry in this.session.Log.Entries)
+        {
+            var (name, _) = SenderName.TellTarget(entry.Sender, entry.SpeakerWorld);
+            if (!SenderName.IsCharacter(name))
+                continue;
+            if (entry.Id == item.Id)
+                return (entry.Sender, entry.SpeakerWorld);
+            if (item.Text.Length > 0 && string.Equals(entry.EventText, item.Text, StringComparison.Ordinal))
+                heard = (entry.Sender, entry.SpeakerWorld);
+        }
+
+        return heard ?? ("", "");
+    }
+
+    private void DrawInviteGlanceText(string text, string date, string time, string world, string sender, string speakerWorld, string id)
     {
         var title = EventTitle.Readable(EventTitle.Choose(text));
         if (title.Length > 0)
@@ -3108,7 +3126,7 @@ public sealed partial class CalendarWindow : Window
             shownWorld = world;
         this.DrawVenue(shownWorld, spot, "none found");
         this.DrawPins(text, null, null, world);
-        this.DrawFrom(sender, "", world, EventTitle.Choose(text), sender ?? "");
+        this.DrawFrom(sender, speakerWorld, world, EventTitle.Choose(text), id);
         if (LinkFinder.Find(text).Count > 0)
         {
             ImGui.TextDisabled("Links");
@@ -3144,12 +3162,9 @@ public sealed partial class CalendarWindow : Window
         var (name, world) = SenderName.TellTarget(sender, speakerWorld);
         if (world.Length == 0 && PlayableWorlds.TryNamedWorld(eventWorld, out var named))
             world = named;
-        var shown = name.Length == 0 ? "" : world.Length > 0 ? $"{name} @ {world}" : name;
-        if (shown.Length == 0)
-        {
-            this.FactLine("From", "");
+        if (!SenderName.IsCharacter(name))
             return;
-        }
+        var shown = world.Length > 0 ? $"{name} @ {world}" : name;
 
         ImGui.TextDisabled("From");
         ImGui.SameLine();

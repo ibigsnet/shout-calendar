@@ -4,9 +4,9 @@
     "Name": "Shout Calendar",
     "Punchline": "Turns FFXIV chat invites into a month calendar you accept yourself.",
     "Description": "Shout Calendar is the standalone calendar plugin. It listens to the chats you choose and keeps event invites on a month calendar until you accept them. It works without Shout Calendar Sync and does not send anything to other players. Install the optional Shout Calendar Sync companion to share public Shout and Yell invites.\n\nIt understands clocks, dates, today, tonight, tomorrow, now, next Tuesday, the Tuesday after next, every Tuesday, every other week, and the 1st and last Wednesday of a month. A few lines from the same player close together are one invite. Chat from other players between those lines stays out of it. Places include wards, plots such as W3P26, coordinates, worlds, and names from the game's own data. A ward heard in a city guesses that city's housing district. The aggressive filter is on: a line needs two of a date, a time, and a place, and at least one must be a written date, a clear clock, or a housing spot.\n\nAdd event keeps a pasted or typed invite on this computer. Save accepts a pending invite. Click a block to edit it under the month, or click the day number for that day's full list. Links and discord.gg addresses can be opened after a confirm. Coordinates open the map with a flag. Known quest givers do the same, and quest names drop a quest link into chat.\n\nThe Resets tab adds Jumbo Cactpot, the weekly reset, and limited events such as A Nocturne for Heroes. Those three start on. Resets that share a clock share one line. Alarms play a chat sound from se.1 to se.16, or a WAV you choose, 15 minutes before an accepted event by default. Unaccepted invites are held for 1 day. Colors are yours to set. Today starts as a light wash.\n\n/shoutcalendar opens the calendar. /shoutcalendar test checks a line on your machine and does not send chat.",
-    "Changelog": "Lines from the same player close together stay one invite when other chat arrives between them.",
+    "Changelog": "A tell is addressed to the player who shouted. A place is not used as the name.",
     "InternalName": "ShoutCalendar",
-    "AssemblyVersion": "0.1.33.0",
+    "AssemblyVersion": "0.1.34.0",
     "RepoUrl": "https://github.com/ibigsnet/shout-calendar",
     "ApplicableVersion": "any",
     "DalamudApiLevel": 15,
@@ -18,10 +18,10 @@
     "IsHide": false,
     "IsTestingExclusive": false,
     "DownloadCount": 0,
-    "LastUpdate": 1790714211,
-    "DownloadLinkInstall": "https://github.com/ibigsnet/shout-calendar/releases/download/v0.1.33/ShoutCalendar.zip",
-    "DownloadLinkUpdate": "https://github.com/ibigsnet/shout-calendar/releases/download/v0.1.33/ShoutCalendar.zip",
-    "IconUrl": "https://raw.githubusercontent.com/ibigsnet/shout-calendar/v0.1.33/images/icon.png"
+    "LastUpdate": 1790743178,
+    "DownloadLinkInstall": "https://github.com/ibigsnet/shout-calendar/releases/download/v0.1.34/ShoutCalendar.zip",
+    "DownloadLinkUpdate": "https://github.com/ibigsnet/shout-calendar/releases/download/v0.1.34/ShoutCalendar.zip",
+    "IconUrl": "https://raw.githubusercontent.com/ibigsnet/shout-calendar/v0.1.34/images/icon.png"
   },
   {
     "Author": "RifleJock",

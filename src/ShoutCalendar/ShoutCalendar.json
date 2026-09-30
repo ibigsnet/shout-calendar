@@ -7,6 +7,6 @@
   "Tags": [
     "utility"
   ],
-  "Changelog": "Lines from the same player close together stay one invite when other chat arrives between them.",
-  "IconUrl": "https://raw.githubusercontent.com/ibigsnet/shout-calendar/v0.1.33/images/icon.png"
+  "Changelog": "A tell is addressed to the player who shouted. A place is not used as the name.",
+  "IconUrl": "https://raw.githubusercontent.com/ibigsnet/shout-calendar/v0.1.34/images/icon.png"
 }
